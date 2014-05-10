@@ -3,6 +3,11 @@
 import hashlib, math, random
 import sys, getopt
 
+__all__ = ['print_usage', 'example_for_password_guessing',
+           'guess_by_realtime_brute_force',
+           'guess_by_rainbowtable'
+          ]
+
 # https://docs.python.org/2/library/profile.html
 # https://docs.python.org/2/library/random.html
 # https://docs.python.org/2/library/math.html
