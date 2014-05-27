@@ -103,6 +103,18 @@ class EmlDictionary:
                self._attach_name[sha1_key], # string list
                self._attach_bin[sha1_key])  # binary buffer
 #----------
+def unicode_convert(buffer_src, charset_src, charset_dst):
+  try:
+    rawbuffer_uc = unicode(buffer_src, charset_src)
+    rawbuffer_uc = rawbuffer_uc.encode(charset_dst, 'ignore')
+  except UnicodeDecodeError:
+    print "ERROR: UnicodeDecodeError, fail to covert from", charset_src, "to unicode"
+    return ''
+  except UnicodeEncodeError:
+    print "ERROR: UnicodeEncodeError, fail to covert from unicode to", charset_dst
+    return ''
+  return rawbuffer_uc
+#----------
 def cook_email_from_string(rawbuffer, email_dict):
   if rawbuffer == None or len(rawbuffer) == 0:
     return False
@@ -141,10 +153,8 @@ def cook_email_header(python_email, email_dict):
             else:
               email_dict.record_charset_chain(hname, charset)
             # unicode conversion
-            try:
-              rawbuffer_uc = unicode(rawdata, charset_candidate)
-              rawbuffer_uc = rawbuffer_uc.encode('utf-8', 'ignore')
-            except UnicodeEncodeError:
+            rawbuffer_uc = unicode_convert(rawdata, charset_candidate, 'utf-8')
+            if len(rawbuffer_uc) == 0:
               rawbuffer_uc = rawdata
             email_dict.insert_header(hname, [rawbuffer_uc, eaddr])
         else:
@@ -160,11 +170,8 @@ def cook_email_header(python_email, email_dict):
       if charset == None:
         charset_candidate = CONST_DEFAULT_CHARSET
       # unicode conversion
-      try:
-        rawbuffer_uc = unicode(rawdata, charset_candidate)
-        rawbuffer_uc = rawbuffer_uc.encode('utf-8', 'ignore')
-      except UnicodeEncodeError:
-        print "ERROR: UnicodeEncodeError, fail to unicode covert from", charset_candidate, "to utf-8"
+      rawbuffer_uc = unicode_convert(rawdata, charset_candidate, 'utf-8')
+      if len(rawbuffer_uc) == 0:
         rawbuffer_uc = rawdata
       email_dict.insert_header(hname, rawbuffer_uc)
       email_dict.record_charset_chain(hname, charset)
@@ -184,15 +191,9 @@ def cook_email_body_by_entity(_pythoneml, _email_dict):
     if eml_charset == None:
       eml_charset = CONST_DEFAULT_CHARSET
     # unicode conversion
-    try:
-      rawbuffer_uc = unicode(rawbuffer, eml_charset)
-      rawbuffer_uc = rawbuffer_uc.encode('utf-8', 'ignore')
-    except UnicodeDecodeError:
-      print "ERROR: UnicodeDecodeError, fail to unicode covert from", eml_charset, "to unicode"
-      rawbuffer_uc = rawbuffer
-    except UnicodeEncodeError:
-      print "ERROR: UnicodeEncodeError, fail to unicode covert from unicode to utf-8"
-      rawbuffer_uc = rawbuffer
+    rawbuffer_uc = unicode_convert(rawbuffer, eml_charset, 'utf-8')
+    if len(rawbuffer_uc) == 0:
+        rawbuffer_uc = rawbuffer
     _email_dict.insert_body(cont_type, eml_charset, rawbuffer_uc)
   # multiple part
   elif 'multipart' == main_type: # ignore due to empty without useful info
@@ -219,9 +220,8 @@ def cook_email_body_by_entity(_pythoneml, _email_dict):
       fn_new = email.Utils.collapse_rfc2231_value(string_filename).strip()
       (string_filename, charset) = email.Header.decode_header(fn_new)[0]
       if charset != None and len(charset) > 0:
-        filename_uc = unicode(string_filename, charset)
-        filename_uc = filename_uc.encode('utf-8', 'ignore')
-        if filename_uc != None and len(filename_uc) > 0:
+        filename_uc = unicode_convert(string_filename, charset, 'utf-8')
+        if len(filename_uc) > 0:
           string_filename = filename_uc
     attach = Attachment(string_sha1, cont_type, string_filename, rawbuffer)
     _email_dict.insert_attachment(attach)
@@ -238,6 +238,79 @@ def cook_email_body(python_email, email_dict):
     for part in python_email.walk():
       cook_email_body_by_entity(part, email_dict)
   return True
+
+class email_unicode_handleTest(unittest.TestCase):
+  _eml_raw = '''Subject: =?UTF-8?B?5ris6Kmm5Lit5paH5L+h5Lu26ZmE5aS+5qqU?=
+From: =?UTF-8?B?5ZOy6Z2S?= <hello@world.com>
+To: =?big5?B?r3WquqxP?= <hi@world.com>
+Cc: =?UTF-8?B?6L+U5Zue?= <byebye@world.com>
+Content-Type: multipart/mixed; boundary=f46d041c4148d7bf9f04f8450fce
+
+--f46d041c4148d7bf9f04f8450fce
+Content-Type: multipart/alternative; boundary=f46d041c4148d7bf9a04f8450fcc
+
+--f46d041c4148d7bf9a04f8450fcc
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: base64
+
+5Lit5paH5YWn5a65
+--f46d041c4148d7bf9a04f8450fcc
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: base64
+
+5Lit5paH5YWn5a65
+--f46d041c4148d7bf9a04f8450fcc--
+--f46d041c4148d7bf9f04f8450fce
+Content-Type: image/png; name="=?UTF-8?B?5Zyw542E5bua5oi/LnBuZw==?="
+Content-Disposition: attachment; filename="=?UTF-8?B?5Zyw542E5bua5oi/LnBuZw==?="
+Content-Transfer-Encoding: base64
+X-Attachment-Id: f_humu8d9n0
+
+iVBORw0KGgoAAAANSUhEUgAAApQAAAHOCAIAAACpUA5nAAAAAXNSR0IArs4c6QAAAARnQU1BAACx
+jwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAP+lSURBVHhetP0FeORInu4Lu8yUZma208yUzkwn
+uVl5N36rvHmNrYL7yZsvE1XKG98Ukv678qZ7gy1R3Ffe9CEgr/9Gebc0/hfWY6hubYsRpwAAAABJ
+RU5ErkJggg==
+--f46d041c4148d7bf9f04f8450fce--
+'''
+  def setUp(self):
+    self.emailmsg = email.message_from_string(self._eml_raw)
+    self.myeml = EmlDictionary()
+    cook_email_header(self.emailmsg, self.myeml)
+    cook_email_body(self.emailmsg, self.myeml)
+  def tearDown(self):
+    del self.myeml
+    del self.emailmsg
+  def test_RAT_retrieve_mail_from_to_cc(self):
+    "FAST: retrieve name of From, To, CC field"
+    #for i in self.myeml.get_header_by_name('from'):
+    #  print "From [%s]" % (i[0])
+    self.assertEqual(self.myeml.get_header_by_name('from')[0][0],
+      '\xe5\x93\xb2\xe9\x9d\x92')
+    #for i in self.myeml.get_header_by_name('to'):
+    #  print "To   [%s]" % (i[0])
+    self.assertEqual(self.myeml.get_header_by_name('to')[0][0],
+      '\xe7\x9c\x9f\xe7\x9a\x84\xe6\x98\xaf')
+    #for i in self.myeml.get_header_by_name('cc'):
+    #  print "Cc   [%s]" % (i[0])
+    self.assertEqual(self.myeml.get_header_by_name('cc')[0][0],
+      '\xe8\xbf\x94\xe5\x9b\x9e')
+  def test_RAT_retrieve_mail_subject(self):
+    "FAST: retrieve Subject"
+    #for i in self.myeml.get_header_by_name('subject'):
+    #  print "Subject [%s]" % (i)
+    self.assertEqual(self.myeml.get_header_by_name('subject')[0],
+      '\xe6\xb8\xac\xe8\xa9\xa6\xe4\xb8\xad\xe6\x96\x87\xe4\xbf\xa1\xe4\xbb\xb6\xe9\x99\x84\xe5\xa4\xbe\xe6\xaa\x94')
+  def test_RAT_retrieve_mail_body(self):
+    "FAST: retrieve Body plain-text"
+    for data_list in self.myeml.retrive_body_by_type('text/plain'):
+      for rawbuffer in data_list:
+        #print "Body [%s]" % (rawbuffer)
+        self.assertEqual(rawbuffer, '\xe4\xb8\xad\xe6\x96\x87\xe5\x85\xa7\xe5\xae\xb9')
+  def test_RAT_retrieve_mail_filename(self):
+    "FAST: retrieve Filename of Attachment"
+    for sha1_value, name_list, _ in self.myeml.retrive_attach_all():
+      #print "Attachment [%s]" % (name_list[0])
+      self.assertEqual(name_list[0], '\xe5\x9c\xb0\xe7\x8d\x84\xe5\xbb\x9a\xe6\x88\xbf.png')
 
 class email_readerTest(unittest.TestCase):
   _eml_raw = '''Delivered-To: hi.kitty@gmail.com
@@ -305,9 +378,15 @@ RU5ErkJggg==
 
     
 if __name__ == '__main__':
-  print 'Running Unittest'
+
+  testruner  = unittest.TextTestRunner(verbosity=2)
   testloader = unittest.TestLoader()
-  testsuit = testloader.loadTestsFromTestCase(email_readerTest)
-  testruner = unittest.TextTestRunner(verbosity=2)
-  testruner.run(testsuit)
   
+  list_testsuit = list()
+  for i in [email_readerTest,
+            email_unicode_handleTest]:
+    testsuit = testloader.loadTestsFromTestCase(i)
+    list_testsuit.append(testsuit)
+  alltests = unittest.TestSuite(list_testsuit)
+  
+  testruner.run(alltests)
