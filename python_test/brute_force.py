@@ -124,7 +124,7 @@ def example_for_password_guessing(_loop, _digit, _reuse):
     print tell_answer(answer)
   
 def main():
-  if len(sys.argv) == 0:
+  if len(sys.argv) == 1:
     print_usage()
     sys.exit(0)
   try:

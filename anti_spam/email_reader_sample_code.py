@@ -17,7 +17,7 @@ to process input eml file and split it into text, html and attachments
 Usage:
   -i <input folder> -o <output folder>
   -i --inputdir: indicate path of folder contains eml to process
-  -i --outputdir: indicate path of folder (to be created and) to store processed files
+  -o --outputdir: indicate path of folder (to be created and) to store processed files
 '''
 
 def parse_parameter(argv, input_dir_list, output_dir_list):
