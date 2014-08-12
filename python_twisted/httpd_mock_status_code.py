@@ -54,8 +54,7 @@ httpcodeFromWiki = {
   417 :'Expectation Failed',
   418 :'I\'m a teapot (RFC 2324)',
   419 :'Authentication Timeout (not in RFC 2616)',
-  420 :'Method Failure (Spring Framework)',
-  420 :'Enhance Your Calm (Twitter)',
+  420 :'Method Failure (Spring Framework); Enhance Your Calm (Twitter)',
   422 :'Unprocessable Entity (WebDAV; RFC 4918)',
   423 :'Locked (WebDAV; RFC 4918)',
   424 :'Failed Dependency (WebDAV; RFC 4918)',
@@ -67,16 +66,46 @@ httpcodeFromWiki = {
   444 :'No Response (Nginx)',
   449 :'Retry With (Microsoft)',
   450 :'Blocked by Windows Parental Controls (Microsoft)',
-  451 :'Unavailable For Legal Reasons (Internet draft)',
-  451 :'Redirect (Microsoft)',
+  451 :'Unavailable For Legal Reasons (Internet draft); Redirect (Microsoft)',
   494 :'Request Header Too Large (Nginx)',
   495 :'Cert Error (Nginx)',
   496 :'No Cert (Nginx)',
   497 :'HTTP to HTTPS (Nginx)',
   498 :'Token expired/invalid (Esri)',
-  499 :'Client Closed Request (Nginx)',
-  499 :'Token required (Esri)',
+  499 :'Client Closed Request (Nginx); Token required (Esri)',
+  500 :'Internal Server Error',
+  501 :'Not Implemented',
+  502 :'Bad Gateway',
+  503 :'Service Unavailable',
+  504 :'Gateway Timeout',
+  505 :'HTTP Version Not Supported',
+  506 :'Variant Also Negotiates (RFC 2295)',
+  507 :'Insufficient Storage (WebDAV; RFC 4918)',
+  508 :'Loop Detected (WebDAV; RFC 5842)',
+  509 :'Bandwidth Limit Exceeded (Apache bw/limited extension)',
+  510 :'Not Extended (RFC 2774)',
+  511 :'Network Authentication Required (RFC 6585)',
+  520 :'Origin Error (Cloudflare)',
+  521 :'Web server is down (Cloudflare)',
+  522 :'Connection timed out (Cloudflare)',
+  523 :'Proxy Declined Request (Cloudflare)',
+  524 :'A timeout occurred (Cloudflare)',
+  598 :'Network read timeout error (Unknown)',
+  599 :'Network connect timeout error (Unknown)',
 }
+
+def parseUserAgent(line):
+  if not line or len(line) == 0:
+    return 'IE'
+  if 'Chrome' in line:
+    return 'Chrome'
+  if 'Firefox' in line:
+    return 'Firefox'
+  if 'Safari' in line:
+    return 'Safari'
+  else:
+    return 'IE'
+
 
 # default 200
 def parseRequestHeader4ReturnCode(line):
@@ -102,6 +131,7 @@ class HTTPStatusProtocl(basic.LineReceiver):
   def __init__(self):
     self.lines = []
     self.rcode = 200 # default 200 OK
+    self.agent = ''
   def lineReceived(self, line):
     #print("DM: lineReceived()")
     self.lines.append(line)
@@ -110,12 +140,20 @@ class HTTPStatusProtocl(basic.LineReceiver):
   def sendResponse(self):
     #print("DM: sendResponse()")
     self.rcode = parseRequestHeader4ReturnCode(self.lines[0])
+    for i in self.lines[1:]:
+      if 'User-Agent' in i:
+        terms = i.split(': ')
+        if len(terms) >= 2 and terms[0].lower() == 'user-agent':
+          self.agent = parseUserAgent(terms[1])
     head4http = ' '.join(['HTTP/1.1', str(self.rcode), convertCode2Str(self.rcode)])
-    print "DM:", head4http
+    print "DM:", self.agent, head4http
     self.sendLine(head4http)
     #self.sendLine('HTTP/1.1 200 OK')
     self.sendLine("")
-    responseBody = "<BR />\r\n".join(self.lines)
+    if self.agent == 'IE':
+      responseBody = "<BR />\r\n".join(self.lines)
+    else:
+      responseBody = "\r\n".join(self.lines)
     self.transport.write(responseBody)
     self.transport.loseConnection()
 
