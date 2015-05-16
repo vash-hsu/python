@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 import unittest
-from Range3 import Range
-from Range3 import div_mod
+from Range4 import Range
+from Range4 import div_mod
 
 
 def log_print(label, message):
@@ -20,11 +20,10 @@ def log_desc(message):
 class BoundaryTest4Range(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        #cls.my_start, cls.my_stop, cls.my_step = (3, 17, 4)
         cls.my_start, cls.my_stop, cls.my_step = (3, 19, 3)
 
     def setUp(self):
-        print
+        print('')
         title = '.'.join(self.id().split('.')[1:])
         log_title(title)
 
