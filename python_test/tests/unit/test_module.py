@@ -3,7 +3,7 @@
 # https://docs.python.org/2.6/library/unittest.html
 
 import unittest
-import module
+from sec import module
 import os, sys, getopt
 
 # test cases for module

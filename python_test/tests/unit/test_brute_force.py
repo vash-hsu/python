@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 
 import unittest
+from sec import brute_force
+from sec import module
 import hashlib, math, random
 
+
 # SUT
-from brute_force import guess_by_realtime_brute_force, \
+from sec.brute_force import guess_by_realtime_brute_force, \
                         guess_by_rainbowtable, \
                         RainbowTable, \
                         rainbow_table_fill, \
