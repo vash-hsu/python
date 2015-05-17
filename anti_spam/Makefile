@@ -2,7 +2,7 @@ PYTHONPATH=$(shell pwd)
 
 all: cov sonar
 
-.PHONY: clean sonar main test coverage cov
+.PHONY: clean sonar cov
 
 cov:
 	-nosetests email_reader.py --with-coverage --cover-erase \

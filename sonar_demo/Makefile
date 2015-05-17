@@ -38,7 +38,7 @@ sonar: cov
 
 clean:
 	rm -rf *.pyc
-	find . -name *.pyc | xargs rm
+	find . -name *.pyc | xargs rm -rf
 	rm -rf htmlcov .coverage coverage.xml
 	rm -f coverage*.xml nosetests*.xml
 	rm -rf cover
