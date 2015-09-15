@@ -75,6 +75,11 @@ class Worker:
             self.soft_limit = 65535
             self.hard_limit = 65535
 
+    def update_resource(self, resource):
+        self.max_wip = resource.get_wip()
+        self.soft_limit = resource.get_soft_limit()
+        self.hard_limit = resource.get_hard_limit()
+
     def get_resource_peak(self):
         return self.resource_peak
 
@@ -126,7 +131,7 @@ class Worker:
     # WorkerError: resource not enough
     def pre_process(self):
         if self.is_quota_available():
-            return self.update_task_from_backlog_to_doing()
+            return self.update_task_between_backlog_and_doing()
         else:
             raise WorkerError('Resource (%s) is not enough'
                               % self.soft_limit)
@@ -163,15 +168,27 @@ class Worker:
             prediction += self.get_cost_of_taskid(task_id)
         return prediction
 
-    def update_task_from_backlog_to_doing(self):
+    def pickup_martyr(self, doing):
+        candidate = OrderedDict()
+        # pickup victim who is younger
+        the_one, the_costs = doing.popitem()
+        candidate[the_one] = the_costs
+        return candidate
+
+    def update_task_between_backlog_and_doing(self):
         new_pickup = []
         # sync news from input to running
-        for task_id, task_costs in self.backlog.iteritems():
-            if len(self.doing) < self.max_wip:
-                self.doing[task_id] = task_costs
-                new_pickup.append(task_id)
-        for task_id in new_pickup:
-            self.backlog.pop(task_id)
+        if len(self.doing) < self.max_wip:
+            for task_id, task_costs in self.backlog.iteritems():
+                if len(self.doing) < self.max_wip:
+                    self.doing[task_id] = task_costs
+                    new_pickup.append(task_id)
+            for task_id in new_pickup:
+                self.backlog.pop(task_id)
+        elif len(self.doing) > self.max_wip:
+            push_back = self.pickup_martyr(self.doing)
+            for task_id, task_costs in push_back.iteritems():
+                self.backlog[task_id] = task_costs
         if len(self.doing) > 0:
             return True
         else:
@@ -190,6 +207,12 @@ class WorkerHelper:
             self.worker = Worker(self.resource, tasks_queue)
             self.ready2go = True
         return self.ready2go
+
+    def update_wip(self, wip):
+        self.resource = ResourceLimitation(wip,
+                                           self.resource.get_soft_limit(),
+                                           self.resource.get_hard_limit())
+        self.worker.update_resource(self.resource)
 
     def insert_task(self, task_id, task_cost_list):
         try:
