@@ -1,8 +1,8 @@
 __author__ = 'vash_hsu'
 
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import unittest
-
+import copy
 
 class ResourceLimitation:
     def __init__(self, max_wip, soft_limit, hard_limit):
@@ -20,6 +20,54 @@ class ResourceLimitation:
         return self.hard_limit
 
 
+class Passport:
+    def __init__(self):
+        self.footprint = dict()
+        self.footprint['disk'] = list()
+        self.footprint['cpu'] = list()
+        self.footprint['memory'] = list()
+
+    def step(self, disk, cpu=0, memory=0):
+        self.footprint['disk'].append(disk)
+        self.footprint['cpu'].append(cpu)
+        self.footprint['memory'].append(memory)
+
+    def max(self, type='all'):
+        if type == 'all':
+            return (max(self.footprint['disk']),
+                    max(self.footprint['cpu']),
+                    max(self.footprint['memory']))
+        elif type in self.footprint.keys():
+            return max(self.footprint[type])
+        else:
+            return 0
+
+    def dump_footprint(self):
+        return (self.footprint['disk'])
+
+
+class Passports:
+    def __init__(self):
+        self.passport = OrderedDict()
+
+    def update(self, taskid, disk=0, cpu=0, memory=0):
+        if taskid not in self.passport:
+            self.passport[taskid] = Passport()
+        self.passport[taskid].step(disk, cpu, memory)
+
+    def historic_max(self):
+        material = dict()
+        for i in self.passport.keys():
+            material[i] = self.passport[i].max(type='all')
+        return material
+
+    def historic(self):
+        material = []
+        for task_id in self.passport.keys():
+            material.append([task_id, self.passport[task_id].dump_footprint()])
+        return material
+
+
 class WorkerError(Exception):
     def __init__(self, value):
         self.value = value
@@ -30,7 +78,7 @@ class WorkerError(Exception):
 
 class TaskCostList():
     def __init__(self, input_list):
-        self.__costs = input_list
+        self.__costs = list(input_list)
 
     def next(self):
         if len(self.__costs) == 0:
@@ -61,9 +109,11 @@ class TaskCostList():
 
 class Worker:
     def __init__(self, resource, tasks_queue=OrderedDict()):
-        self.backlog = tasks_queue
+        self.task_history = tasks_queue
+        self.backlog = copy.deepcopy(self.task_history)
         self.doing = OrderedDict()
         self.done = OrderedDict()
+        self.passports = Passports()
         self.iteration = 0
         self.resource_peak = 0
         self.max_wip = resource.get_wip()
@@ -107,6 +157,11 @@ class Worker:
     def is_taskid_finished(self, task_id):
         return self.doing[task_id].next() < 0
 
+    def track_footprint(self):
+        for task_id in self.get_taskids_of_doing():
+            self.passports.update(task_id,
+                                  disk=self.get_cost_of_taskid(task_id))
+
     def purge_tasks_from_doing_to_done(self):
         for task_id in self.get_taskids_of_doing():
             if self.is_taskid_finished(task_id):
@@ -147,6 +202,7 @@ class Worker:
             self.resource_peak = resource_occupied
 
     def post_process(self):
+        self.track_footprint()
         self.purge_tasks_from_doing_to_done()
 
     def insert_incoming_task(self, task_id, task_cost_list):
@@ -179,16 +235,17 @@ class Worker:
         new_pickup = []
         # sync news from input to running
         if len(self.doing) < self.max_wip:
-            for task_id, task_costs in self.backlog.iteritems():
+            for task_id, task_costs in sorted(self.backlog.iteritems()):
                 if len(self.doing) < self.max_wip:
                     self.doing[task_id] = task_costs
                     new_pickup.append(task_id)
             for task_id in new_pickup:
                 self.backlog.pop(task_id)
+        # drop tasks and move them to backlog
         elif len(self.doing) > self.max_wip:
             push_back = self.pickup_martyr(self.doing)
-            for task_id, task_costs in push_back.iteritems():
-                self.backlog[task_id] = task_costs
+            for task_id in push_back.keys():
+                self.backlog[task_id] = copy.deepcopy(self.task_history[task_id])
         if len(self.doing) > 0:
             return True
         else:
@@ -232,6 +289,10 @@ class WorkerHelper:
             string2debug = self.worker.check_status()
             self.ready2go = False
         return string2debug
+
+    def dump_footprint(self):
+        #return self.worker.passports.historic_max()
+        return self.worker.passports.historic()
 
 
 if __name__ == '__main__':
