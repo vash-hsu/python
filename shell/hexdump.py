@@ -9,23 +9,20 @@ PYTHON    = 3
 
 
 def usage_help():
-    #print '''Usage: -[C|c|p] FILEPATH
-    print '''Usage: -[C|c] FILEPATH
+    print '''Usage: -[C|c|p] FILEPATH
     -C:  Canonical hex+ASCII display
     -c:  C style declaration
-'''
-    #-p:  python style declaration
+    -p:  Python style declaration'''
 
 
 def parse_parameter(list_para):
-    display_type = CANONICAL
+    display_type = None
     candidate = list()
     try:
-        opts, args = getopt.getopt(list_para, "hCcp", ["help",])
+        opts, args = getopt.getopt(list_para, 'hCcp', ['help', ])
         for opt, arg in opts:
             if opt in ('-h', '--help'):
-                usage_help()
-                return None
+                return display_type, candidate
             elif opt == '-C':
                 display_type = CANONICAL
             elif opt == '-c':
@@ -38,49 +35,74 @@ def parse_parameter(list_para):
             candidate.append(input_one)
     except getopt.GetoptError as err:
         print str(err)
+    if not display_type and len(candidate) > 0:
+        display_type = CANONICAL
     return display_type, candidate
 
 
 def header_write(offset):
     if offset == 0:
-        print '         00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F' +\
-             '     0123456789ABCDEF'
+        print ' ' * 9 + '00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F' +\
+             ' ' * 5 + '0123456789ABCDEF'
     text = ''.join("{:02x}".format(offset))
-    header = '0'*(7 - len(text)) + text + '0'
-    print header.upper(),
+    header = '0'*(7 - len(text)) + text + '0 '
+    return header.upper()
 
 
-def payload_write(raw):
-    hex_data = ' '.join("{:02x}".format(ord(ch)) for ch in raw)
-    print hex_data.upper(),
-    ascii_data = list()
-    for character in raw:
-        if character > '~' or character < ' ':
-            ascii_data.append('.')
-        else:
-            ascii_data.append(character)
-    print ' '*(16*3 - len(hex_data)) + ' | ' + ''.join(ascii_data)
+def payload_write(raw, offset):
+    buffer2write = ''
+    if raw:
+        ascii_data = list()
+        for character in raw:
+            if character > '~' or character < ' ':
+                ascii_data.append('.')
+            else:
+                ascii_data.append(character)
+        hex_data = ' '.join("{:02x}".format(ord(ch)).upper() for ch in raw)
+        lineup = "%s %s | %s" % \
+                 (hex_data, ' '*(16*3 - len(hex_data)), ''.join(ascii_data))
+        buffer2write = header_write(offset) + lineup
+    sys.stdout.write(buffer2write)
 
 
 def payload_write_c(raw, offset):
+    buffer2write = ''
     if not raw:
         if offset > 0:
-            sys.stdout.write('\n};')
-        return
-    meta = '\\x' + '\',\'\\x'.join("{:02x}".format(ord(ch)).upper() for ch in raw)
-    if offset > 0:
-        prefix = ','
+            buffer2write = '\n};'
     else:
-        prefix = 'const char raw[] = {'
-    sys.stdout.write(prefix + '\n  \'' + meta + '\'')
+        meta = '\\x' + '\',\'\\x'.join("{:02x}".format(ord(ch)).upper() for ch in raw)
+        if offset > 0:
+            prefix = ','
+        else:
+            prefix = 'const char raw[] = {'
+        buffer2write = prefix + '\n  \'' + meta + '\''
+    sys.stdout.write(buffer2write)
+
+
+def payload_write_python(raw, offset):
+    buffer2write = ''
+    if not raw:
+        if offset > 0:
+            buffer2write = '\n'
+    else:
+        meta = '\'\\x' + \
+               '\\x'.join("{:02x}".format(ord(ch)).upper() for ch in raw) + \
+               '\''
+        if offset > 0:
+            buffer2write = ' \\\n      ' + meta
+        else:
+            buffer2write = 'raw = ' + meta
+    sys.stdout.write(buffer2write)
 
 
 def dump_file(display_as, raw, offset):
     if display_as == CANONICAL and raw:
-        header_write(offset)
-        payload_write(raw)
+        payload_write(raw, offset)
     elif display_as == CLANGUAGE:
         payload_write_c(raw, offset)
+    elif display_as == PYTHON:
+        payload_write_python(raw, offset)
     else:
         pass
 
@@ -99,12 +121,11 @@ def read_convert_write(display_as, files):
 
 
 if __name__ == '__main__':
-    metadata = None
-    if len(sys.argv) == 1:
+    if len(sys.argv[1:]) == 0:
         usage_help()
     else:
         action, targets = parse_parameter(sys.argv[1:])
         if action and targets and len(targets):
             read_convert_write(action, targets)
         else:
-            print "Oops"
+            usage_help()
