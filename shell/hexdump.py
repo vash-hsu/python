@@ -40,84 +40,81 @@ def parse_parameter(list_para):
     return display_type, candidate
 
 
-def header_write(offset):
-    if offset == 0:
-        print ' ' * 9 + '00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F' +\
-             ' ' * 5 + '0123456789ABCDEF'
-    text = ''.join("{:02x}".format(offset))
-    header = '0'*(7 - len(text)) + text + '0 '
-    return header.upper()
+class Dumper:
+    def __init__(self, stream, type=CANONICAL):
+        self.stream = stream
+        self.offset = 0
+        if type == CANONICAL:
+            self.function = self.dump_canonical
+        elif type == CLANGUAGE:
+            self.function = self.dump_c
+        elif type == PYTHON:
+            self.function = self.dump_python
+        else:
+            self.function = self.dump_canonical
 
-
-def payload_write(raw, offset):
-    buffer2write = ''
-    if raw:
-        ascii_data = list()
-        for character in raw:
-            if character > '~' or character < ' ':
-                ascii_data.append('.')
+    @property
+    def bulk(self):
+        while True:
+            buffer = self.stream.read(16)
+            if len(buffer) == 16:
+                yield self.function(buffer, self.offset)
             else:
-                ascii_data.append(character)
-        hex_data = ' '.join("{:02x}".format(ord(ch)).upper() for ch in raw)
-        lineup = "%s %s | %s" % \
-                 (hex_data, ' '*(16*3 - len(hex_data)), ''.join(ascii_data))
-        buffer2write = header_write(offset) + lineup
-    sys.stdout.write(buffer2write)
+                yield self.function(buffer, self.offset, end=True)
+                break
+            self.offset += 1
 
+    def dump_canonical(self, raw, offset, end=False):
+        buffer2write = ''
+        if len(raw) > 0:
+            hex_ = b' '.join(["%0*X" % (2, ord(ch)) for ch in raw])
+            text = b''.join([ch if 0x20 <= ord(ch) < 0x7F else b'.' for ch in raw])
+            buffer2write = b"%07X0 %-*s %s" % (offset, 16*(2+1), hex_, text)
+            if offset == 0:
+                header = ' ' * 9 + '00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F' +\
+                     ' ' * 2 + '0123456789ABCDEF'
+                return header + '\n' + buffer2write
+        return buffer2write
 
-def payload_write_c(raw, offset):
-    buffer2write = ''
-    if not raw:
-        if offset > 0:
-            buffer2write = '\n};'
-    else:
-        meta = '\\x' + '\',\'\\x'.join("{:02x}".format(ord(ch)).upper() for ch in raw)
-        if offset > 0:
-            prefix = ','
+    def dump_c(self, raw, offset, end=False):
+        prefix = ''
+        meta = ''
+        postfix = ''
+        if offset == 0:
+            prefix = 'const char raw[] = {\n'
+        if len(raw) > 0:
+            meta = '  \'' + \
+                   '\\x' + '\',\'\\x'.join("{:02X}".format(ord(ch)) for ch in raw) +\
+                   '\''
+        if end is False:
+            postfix = ','
         else:
-            prefix = 'const char raw[] = {'
-        buffer2write = prefix + '\n  \'' + meta + '\''
-    sys.stdout.write(buffer2write)
+            postfix = '\n};'
+        return prefix + meta + postfix
 
-
-def payload_write_python(raw, offset):
-    buffer2write = ''
-    if not raw:
-        if offset > 0:
-            buffer2write = '\n'
-    else:
-        meta = '\'\\x' + \
-               '\\x'.join("{:02x}".format(ord(ch)).upper() for ch in raw) + \
-               '\''
-        if offset > 0:
-            buffer2write = ' \\\n      ' + meta
+    def dump_python(self, raw, offset, end=False):
+        prefix = ''
+        meta = ''
+        postfix = ''
+        if len(raw) > 0:
+            meta = '\'\\x' + \
+                   '\\x'.join("{:02x}".format(ord(ch)).upper() for ch in raw) + \
+                   '\''
+        if offset == 0:
+            prefix = 'raw = '
         else:
-            buffer2write = 'raw = ' + meta
-    sys.stdout.write(buffer2write)
-
-
-def dump_file(display_as, raw, offset):
-    if display_as == CANONICAL and raw:
-        payload_write(raw, offset)
-    elif display_as == CLANGUAGE:
-        payload_write_c(raw, offset)
-    elif display_as == PYTHON:
-        payload_write_python(raw, offset)
-    else:
-        pass
+            prefix = '    '
+        if end is False:
+            postfix = '\\'
+        return prefix + meta + postfix
 
 
 def read_convert_write(display_as, files):
     for file in files:
-        offset = 0
         with open(file, 'rb') as file_handler:
-            while True:
-                buffer = file_handler.read(16)
-                if len(buffer) == 0:
-                    break
-                dump_file(display_as, buffer, offset)
-                offset += 1
-            dump_file(display_as, None, offset)
+            worker = Dumper(file_handler, display_as)
+            for i in worker.bulk:
+                print i
 
 
 if __name__ == '__main__':
