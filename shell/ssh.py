@@ -5,9 +5,9 @@ import getopt
 import sys
 import getpass
 import socket
+import threading
 
-
-CONST_DEFAULT_BUFFER_SIZE = 1024
+CONST_DEFAULT_BUFFER_SIZE = 256
 CONST_SSH_PORT = 22
 CONST_SSH_DEFAULT_TIMEOUT = 10
 
@@ -143,8 +143,30 @@ def parse_parameter(list_para):
                   ipv4=ipaddress, portnum=port, cli=command)
 
 
+# https://github.com/paramiko/paramiko/blob/master/demos/interactive.py
+def windows_shell(chan):
+    def writeall(sock):
+        while True:
+            buffer = sock.recv(CONST_DEFAULT_BUFFER_SIZE)
+            if not buffer:
+                sys.stdout.flush()
+                break
+            sys.stdout.write(buffer)
+            sys.stdout.flush()
+    writer = threading.Thread(target=writeall, args=(chan,))
+    writer.start()
+
+    try:
+        while True:
+            d = sys.stdin.read(1)
+            if not d:
+                continue
+            chan.send(d)
+    except EOFError:
+        pass
+
+
 def my_ssh_helper(ini):
-    #ini.debug()
     client = paramiko.SSHClient()
     # force username:password only
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -167,24 +189,11 @@ def my_ssh_helper(ini):
                 print rawdata
     else:  # file a shell
         ssh_session = client.get_transport().open_session()
-        if ssh_session.active:
-            ssh_session.exec_command('hostname')
-            hostname = ssh_session.recv(CONST_DEFAULT_BUFFER_SIZE).rstrip()
-            print "DEBUG: hostname =", hostname
-        mytransport = client.get_transport()
-        username = mytransport.get_username()
-        while True:
-            try:
-                userinput = raw_input("%s@%s# " % (username, hostname))
-            except KeyboardInterrupt:
-                print "\n\n<INFO> user interrupt by Ctrl + C"
-                break
-            if userinput == 'exit':
-                break
-            ssh_session = client.get_transport().open_session()
-            ssh_session.exec_command(userinput)
-            print ssh_session.recv(CONST_DEFAULT_BUFFER_SIZE).rstrip()
-        client.close()
+        ssh_session.get_pty()
+        ssh_session.invoke_shell()
+        windows_shell(ssh_session)
+        ssh_session.close()
+    client.close()
     return
 
 if __name__ == '__main__':
