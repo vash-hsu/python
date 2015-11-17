@@ -145,25 +145,55 @@ def parse_parameter(list_para):
 
 # https://github.com/paramiko/paramiko/blob/master/demos/interactive.py
 def windows_shell(chan):
+    global current_status
+    # 1: remove command from buffer and then print
+    # 0: print and then to read from stdin
+    # -1: time to say goodbye
+    current_status = 0
+
     def writeall(sock):
+        global current_status
+        buffer = ''
         while True:
-            buffer = sock.recv(CONST_DEFAULT_BUFFER_SIZE)
+            buffer += sock.recv(CONST_DEFAULT_BUFFER_SIZE)
             if not buffer:
                 sys.stdout.flush()
                 break
+            if buffer.find('\n') < 0:
+                if buffer.find('# ') < 0:
+                    continue
+            if current_status >= 1:
+                current_status = 0
+                buffer = '\n'.join(buffer.split('\n')[1:])
             sys.stdout.write(buffer)
             sys.stdout.flush()
+            buffer = ''
+            if current_status < 0:
+                sys.exit(0)
+                break
+
     writer = threading.Thread(target=writeall, args=(chan,))
     writer.start()
-
     try:
         while True:
-            d = sys.stdin.read(1)
-            if not d:
-                continue
-            chan.send(d)
+            try:
+                line = sys.stdin.readline()
+            except KeyboardInterrupt:
+                print 'KeyboardInterrupt'
+                chan.send('\r\x04')
+                raise KeyboardInterrupt
+                break
+            line.rstrip('\n\t ')
+            if line == 'exit':
+                current_status = -1
+                chan.send('\n\x04')
+                break
+            if len(line) > 0:
+                chan.send(line)
+                current_status = 1
     except EOFError:
         pass
+    return
 
 
 def my_ssh_helper(ini):
