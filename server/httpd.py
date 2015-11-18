@@ -5,11 +5,10 @@ import sys
 import os
 
 
-import plugin.javascript
 from plugin.htmlwritter import *
 from plugin.services import Service_ReturnCode
 from plugin.services import Service_Calendar
-
+from plugin.javascript import Service_JavaScript
 
 # twisted
 from twisted.web.server import Site
@@ -126,7 +125,12 @@ class MyServer:
             name = i.lower()
             link = os.path.split(name)[-1]
             self.root.putChild(name, File(i))
-            self.root.register_children(name, link, 'FILE for ' + name)
+            self.root.register_children(name, link, 'FILE for ' + i)
+        for i in self.profile.demos:
+            name = i.lower()
+            link = os.path.split(name)[-1]
+            self.root.putChild(name, Service_JavaScript(i))
+            self.root.register_children(name, link, 'demo for ' + i)
 
     def start(self):
         reactor.listenTCP(self.profile.port, self.factory)
