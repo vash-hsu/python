@@ -3,6 +3,7 @@
 # twisted
 from twisted.web.resource import Resource
 from htmlwritter import *
+from services import convert_path_to_name_path_pair
 import os
 
 
@@ -43,20 +44,21 @@ class Service_JavaScript(Resource):
     def render_GET(self, request):
         candidate = dict()
         content = list()
-        # walk through FOLDER_JAVASCRIPT
+        uri = request.uri
         for root, dirs, files in os.walk(self.folder):
             for filename in files:
                 filepath = os.path.join(root, filename)
                 name, ext = os.path.splitext(filename)
-                if ext != '.js':
+                if ext not in ['.js', '.py']:
                     continue
                 if os.path.isfile(filepath):
-                    candidate[name] = filepath
+                    name, path = convert_path_to_name_path_pair(filepath)
+                    candidate[name] = path
         content.append(prepare_html_start())
         content.append(prepare_table_start(['Link', 'Location']))
         for i in sorted(candidate.keys()):
             content.append(prepare_table_raw([
-                "<a href=\"%s\">%s</a>" % (candidate[i], i),
+                "<a href=\"%s/%s\">%s</a>" % (uri, i, i),
                 candidate[i]]))
         content.append(prepare_table_stop())
         content.append(prepare_html_stop())

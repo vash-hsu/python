@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import time
+import os
 from calendar import calendar
 
 # twisted
@@ -8,6 +9,23 @@ from twisted.web.resource import Resource
 
 from htmlwritter import *
 from httpstatuscode import *
+
+
+def convert_path_to_name_path_pair(str_path):
+    '''
+    :param str_path:
+    :return: [name, path]
+
+    >>> convert_path_to_name_path_pair('/abc/xyz/foo/bar/')
+    ['bar', '/abc/xyz/fo/bar']
+    >>> convert_path_to_name_path_pair("c:\\\\abc\\\\xyz\\\\foo\\\\bar\\\\")
+    ['bar', 'c:\\\\abc\\\\xyz\\\\foo\\\\bar']
+    >>> convert_path_to_name_path_pair("foo\\\\bar")
+    ['bar', 'foo\\\\bar']
+    '''
+    path = os.path.normpath(str_path)
+    base, name = os.path.split(path)
+    return [name, path]
 
 
 class HttpStatusCodeProvider(Resource):

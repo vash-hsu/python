@@ -9,6 +9,7 @@ from plugin.htmlwritter import *
 from plugin.services import Service_ReturnCode
 from plugin.services import Service_Calendar
 from plugin.javascript import Service_JavaScript
+from plugin.services import convert_path_to_name_path_pair
 
 # twisted
 from twisted.web.server import Site
@@ -88,6 +89,14 @@ def parse_parameter(list_para):
     return Profile(port=port, folders=file_folder, demos=demo_folder)
 
 
+class Page404(Resource):
+    isLeaf = True
+
+    def render_GET(self, request):
+        request.setResponseCode(404)
+        return '<html><body><h>404</h></body></html>'
+
+
 class ServiceRoot(Resource):
     isLeaf = False
     child_list = dict()  # name -> [0]link, [1]description
@@ -95,7 +104,7 @@ class ServiceRoot(Resource):
     def getChild(self, path, request):
         if path == '' or path == '/' or path == '/index.html':
             return self
-        return Resource.getChild(self, path, request)
+        return Page404()
 
     def render_GET(self, request):
         buffer = list()
@@ -122,15 +131,15 @@ class MyServer:
         self.factory = Site(self.root)
         self.profile = profile
         for i in self.profile.folders:
-            name = i.lower()
-            link = os.path.split(name)[-1]
-            self.root.putChild(name, File(i))
-            self.root.register_children(name, link, 'FILE for ' + i)
+            name, path = convert_path_to_name_path_pair(i)
+            name = name.lower()
+            self.root.putChild(name, File(path))
+            self.root.register_children(name, name, 'FILE for ' + path)
         for i in self.profile.demos:
-            name = i.lower()
-            link = os.path.split(name)[-1]
-            self.root.putChild(name, Service_JavaScript(i))
-            self.root.register_children(name, link, 'demo for ' + i)
+            name, path = convert_path_to_name_path_pair(i)
+            name = name.lower()
+            self.root.putChild(name, Service_JavaScript(path))
+            self.root.register_children(name, name, 'demo for ' + path)
 
     def start(self):
         reactor.listenTCP(self.profile.port, self.factory)
@@ -153,6 +162,7 @@ if __name__ == '__main__':
     if profile is None:
         usage_help()
         sys.exit(0)
+    profile.debug()
     server = MyServer(profile)
     server.plugin()
     server.start()
