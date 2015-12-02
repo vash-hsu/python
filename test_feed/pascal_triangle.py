@@ -35,7 +35,13 @@ def task_handle_zipper(x=0, y=0, left=0, right=0):
     my_iseeu = ISeenYou()
     if 0 not in (x, y, left, right):
         if not my_iseeu.there(left+right):
-            print "zip %d.zip %d.zip %d.zip" % (left+right, left, right)
+            if left != right:
+                print "zip %d.zip %d.zip %d.zip" % (left+right, left, right)
+            else:
+                print "zip %d.zip %d.zip" % (left+right, left)
+                print "ln -s %d.zip _%d.zip" % (left, right)
+                print "zip -u %d.zip _%d.zip" % (left+right, right)
+                print "rm _%d.zip" % right
     return left + right
 
 
