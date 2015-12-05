@@ -5,9 +5,12 @@ import os
 import dns.resolver
 import time
 import requests
+from datetime import datetime
 
 
 alexa_url = 'http://s3.amazonaws.com/alexa-static/top-1m.csv.zip'
+alexa_zip = 'top-1m.csv.zip'
+alexa_csv = 'top-1m.csv'
 CONST_DNS_TIMEOUT = 2
 CONST_HTTP_TIMEOUT = 10
 CONST_HTTPS_TIMEOUT = 15
@@ -23,111 +26,147 @@ Example
 
 
 # answer, latency
-def nslookup(target, type):
-    latency = time.clock()
-    answer = None
+def nslookup(target, type='A', retry=0):
+    yesterday = time.clock()
+    iplist = list()
+    answer = 'N/A'
     myresolver = dns.resolver.Resolver()
-    # to wait for a response from a server, before timing out.
     myresolver.timeout = CONST_DNS_TIMEOUT
-    # to get an answer to the question.
-    myresolver.lefttime = CONST_DNS_TIMEOUT + 2
+    myresolver.lefttime = CONST_DNS_TIMEOUT
     try:
         queried = myresolver.query(target, type)
-        answer = str(queried.response.answer[0].items[0])
-    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
-        answer = 'NXDOMAIN'
-    except (dns.resolver.Timeout,
-            dns.resolver.YXDOMAIN, dns.resolver.NoNameservers):
+        for response in queried.response.answer:
+            if response.rdtype == 1:  # A
+                for j in response:
+                    iplist.append(j.to_text())
+    except BaseException:
         pass
-    finally:
-        latency = time.clock() - latency
-        return answer, round(latency, 3)
+    if len(iplist) > 0:
+        answer = ';'.join(iplist)
+    elif retry > 0:
+        result = nslookup(target, type, retry-1)
+        answer = result[0]
+    today = time.clock()
+    latency = today - yesterday
+    return [answer, str(round(latency, 3))]
 
 
-def nslookup_with_retry(target, type, retry):
-    fail_count = 0
-    answer = 'N/A'
-    latency = 0
-    while fail_count <= retry:
-        fail_count += 1
-        rA, latency = nslookup(target, type)
-        if rA is not None:
-            answer = rA
-            break
-    return answer, str(latency)
-
-
-def download_alexa_zip():
-    pass
-
-
-def is_valid_ipv4(string):
-    import socket
+def download(target_url, filename):
+    r = requests.get(target_url, stream=True)
     try:
-        socket.inet_pton(socket.AF_INET, string)
-    except AttributeError:  # no inet_pton here, sorry
-        try:
-            socket.inet_aton(string)
-        except socket.error:
-            return False
-        return string.count('.') == 3
-    except socket.error:  # not a valid address
+        with open(filename, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=1024):
+                if chunk:
+                    f.write(chunk)
+    except BaseException as err:
+        print "ERROR:", str(err)
         return False
     return True
 
 
-def httping(target):
-    latency = time.clock()
-    response = requests.head("http://"+target, allow_redirects=True)
-    latency = round(time.clock() - latency, 3)
-    legacy = [str(i.status_code) for i in response.history]
-    if 200 <= int(response.status_code) < 300:
-        return str(response.status_code), latency, legacy + [str(response.status_code)]
-    else:
-        return None, latency, legacy + [str(response.status_code)]
+def unzip(input_zip, target_file):
+    print "TODO: unzip %s from %s" % (target_file, input())
+    return False
 
 
-def httping_with_retry(target, retry):
-    fail_count = 0
-    answer = 'N/A'
-    latency = 0
-    history = []
-    while fail_count <= retry:
-        fail_count += 1
-        rA, latency, history = httping(target)
-        if rA is not None:
-            answer = rA
-            break
-    return answer, str(latency), history
+def httping(target, retry=0):
+    yesterday = time.clock()
+    rcode = '0'
+    story = ''
+    try:
+        response = requests.head(target,
+                                 allow_redirects=True,
+                                 timeout=2.0)
+        rcode = str(response.status_code)
+        legacy = [str(i.status_code) for i in response.history]
+        story = ';'.join(legacy + [str(response.status_code)])
+    except KeyboardInterrupt as err:
+        print "WARNING: User Cancel by Ctrl+C"
+        today = time.clock()
+        latency = str(round(today - yesterday, 3))
+        return ['-99', latency, '']
+    except BaseException as err:
+        print "WARNING:", err.__class__.__name__
+        print "Exception:", str(err)
+    finally:
+        if 200 <= int(rcode) < 300:
+            today = time.clock()
+            latency = str(round(today - yesterday, 3))
+            return [rcode, latency, story]
+    # retry?
+    if retry > 0:
+        children = httping(target, retry-1)
+        today = time.clock()
+        latency = str(round(today - yesterday, 3))
+    return [children[0], latency, children[2]]
 
 
 def get_dns_httping_result(target):
-    data = list()
-    answer, latency = nslookup_with_retry(target, 'A', CONST_RETRY)
-    data.append(answer)
-    data.append(latency)
-    if is_valid_ipv4(answer):
-        answer, latency, history = httping_with_retry(target, CONST_RETRY)
-        data.append(answer)
-        data.append(latency)
-        if len(history):
-            data.append(';'.join(history))
-    return data
+    result = list()
+    answer, latency = nslookup(target, 'A', CONST_RETRY)
+    result += [answer, latency]
+    if answer != 'N/A':
+        answer, latency, history = httping('http://' + target,
+                                           CONST_RETRY)
+        result += [answer, latency, history]
+    return result
 
 
-def alexa_go_go_go(top_many):
+def pick_up_name(source, middle_name, timestamp):
+    return '-'.join([
+        os.path.splitext(source)[0],
+        middle_name,
+        timestamp.strftime("%Y-%m-%d_%H%M")
+    ]) + '.csv'
+
+
+def alexa_go_go(input_file, top_many):
+    output_file = pick_up_name(input_file, str(top_many), datetime.now())
+    try:
+        writer = open(output_file, 'w')
+    except BaseException as err:
+        print "ERROR: fail to prepare output file", output_file
+        print "WARNING:", err.__class__.__name__
+        print "Exception: ", str(err)
+        return False
+    try:
+        writer.writelines(','.join(['rank', 'domain', 'ip',
+                                    'nslookup(sec)', 'httping',
+                                    'httping(secs)', 'notes'])+'\n')
+        counter = 0
+        with open("top-1m.csv", 'r') as reader:
+            for line in reader:
+                counter += 1
+                sn, domain = line.rstrip().split(',')
+                reputation = get_dns_httping_result(domain)
+                writer.writelines(','.join([sn, domain] + reputation)+'\n')
+                if counter >= top_many:
+                    break
+    except KeyboardInterrupt as err:
+        print "WARNING: User Cancel by Ctrl+C"
+    except BaseException as err:
+        print "ERROR: fail to prepare output file", output_file
+        print "WARNING:", err.__class__.__name__
+        print "Exception: ", str(err)
+    finally:
+        writer.close()
+
+
+def alexa_go(top_many):
     # download top-1m.csv.zip
+    if not os.path.isfile(alexa_zip):
+        if not download(alexa_url, alexa_zip):
+            print "ERROR: fail to get the latest %s from %s" %\
+                  (alexa_zip, alexa_url)
+            return False
     # unzip top-1m.csv
-    print ','.join(['rank', 'domain', 'nslookup', 'secs', 'httping', 'secs', 'notes'])
-    counter = 0
-    with open("top-1m.csv", 'r') as reader:
-        for line in reader:
-            counter += 1
-            sn, domain = line.rstrip().split(',')
-            reputation = get_dns_httping_result(domain)
-            print ','.join([sn, domain] + reputation)
-            if counter >= top_many:
-                break
+    if not os.path.isfile(alexa_csv):
+        if not unzip(alexa_zip. alexa_csv):
+            print "ERROR: fail to get latest %s from %s" %\
+                  (alexa_csv, alexa_zip)
+            return False
+    # processing
+    return alexa_go_go(alexa_csv, top_many)
 
 
 if __name__ == '__main__':
@@ -137,6 +176,7 @@ if __name__ == '__main__':
         print_usage(os.path.split(sys.argv[0])[-1])
         sys.exit(0)
     if sys.argv[1].isdigit():
-        alexa_go_go_go(int(sys.argv[1]))
+        if not alexa_go(int(sys.argv[1])):
+            sys.exit(-1)
     else:
         print "ERROR: %s is not numeric" % sys.argv[1]
