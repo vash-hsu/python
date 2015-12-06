@@ -6,7 +6,7 @@ import dns.resolver
 import time
 import requests
 from datetime import datetime
-
+import zipfile
 
 alexa_url = 'http://s3.amazonaws.com/alexa-static/top-1m.csv.zip'
 alexa_zip = 'top-1m.csv.zip'
@@ -64,9 +64,15 @@ def download(target_url, filename):
     return True
 
 
-def unzip(input_zip, target_file):
-    print "TODO: unzip %s from %s" % (target_file, input())
-    return False
+def unzip(input_zip, target_file, output_file):
+    if not os.path.isfile(input_zip):
+        return False
+    with zipfile.ZipFile(input_zip, 'r') as zipper:
+        if target_file not in zipper.namelist():
+            return False
+        with open(output_file, 'wb') as writer:
+            writer.write(zipper.read(target_file))
+    return True
 
 
 def httping(target, retry=0):
@@ -98,7 +104,11 @@ def httping(target, retry=0):
         children = httping(target, retry-1)
         today = time.clock()
         latency = str(round(today - yesterday, 3))
-    return [children[0], latency, children[2]]
+        return [children[0], latency, children[2]]
+
+    today = time.clock()
+    latency = str(round(today - yesterday, 3))
+    return [rcode, latency, story]
 
 
 def get_dns_httping_result(target):
@@ -116,7 +126,7 @@ def pick_up_name(source, middle_name, timestamp):
     return '-'.join([
         os.path.splitext(source)[0],
         middle_name,
-        timestamp.strftime("%Y-%m-%d_%H%M")
+        timestamp.strftime("%Y-%m-%d_%H%M%S")
     ]) + '.csv'
 
 
@@ -124,6 +134,7 @@ def alexa_go_go(input_file, top_many):
     output_file = pick_up_name(input_file, str(top_many), datetime.now())
     try:
         writer = open(output_file, 'w')
+        print "INFO: write result to", output_file
     except BaseException as err:
         print "ERROR: fail to prepare output file", output_file
         print "WARNING:", err.__class__.__name__
@@ -150,6 +161,7 @@ def alexa_go_go(input_file, top_many):
         print "Exception: ", str(err)
     finally:
         writer.close()
+    return True
 
 
 def alexa_go(top_many):
@@ -159,12 +171,18 @@ def alexa_go(top_many):
             print "ERROR: fail to get the latest %s from %s" %\
                   (alexa_zip, alexa_url)
             return False
+        else:
+            print "INFO: success to download %s from %s" %\
+                  (alexa_zip, alexa_url)
     # unzip top-1m.csv
     if not os.path.isfile(alexa_csv):
-        if not unzip(alexa_zip. alexa_csv):
+        if not unzip(alexa_zip, alexa_csv, alexa_csv):
             print "ERROR: fail to get latest %s from %s" %\
                   (alexa_csv, alexa_zip)
             return False
+        else:
+            print "INFO: success to unzip %s from %s" %\
+                  (alexa_csv, alexa_zip)
     # processing
     return alexa_go_go(alexa_csv, top_many)
 
