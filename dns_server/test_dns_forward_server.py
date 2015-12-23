@@ -48,6 +48,10 @@ class UtilityTest(unittest.TestCase):
         log_desc(testdata)
         self.assertEqual(parse_parameter(testdata.split()),
                          (10053, None, None))
+        testdata = '-p 99999 -f 192.168.1.1:53'
+        log_desc(testdata)
+        self.assertEqual(parse_parameter(testdata.split()),
+                         (None, '192.168.1.1', 53))
 
     def testNotSupportIPv6(self):
         testdata = '-p 10053 -f fe80::a838:bed2:7ef8:5950:53'

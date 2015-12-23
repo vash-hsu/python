@@ -12,9 +12,12 @@ import ipaddr
 from SocketServer import ThreadingMixIn, UDPServer, BaseRequestHandler
 import threading
 import socket
+import Queue
 
 CONST_VERSION = '0.1'
 DEBUG = False
+CONST_TIMEOUT = 2  # 2 seconds
+
 VERIFIED_Not_IP = 0
 VERIFIED_IPv4_Private = 1
 VERIFIED_IPv4_Global = 2
@@ -23,7 +26,7 @@ VERIFIED_IPv6_Global = 4
 
 BACKEND_DNS_SERVER = '8.8.8.8'
 BACKEND_DNS_PORT = 53
-
+BACKEND_DNS_SERVERS = list()
 
 def print_usage():
     print '''\
@@ -99,6 +102,35 @@ class Profile:
         return self.dip, self.dport
 
 
+def parse_parameter_s(argv):
+    try:
+        opts, args = getopt.getopt(argv, 'hp:f:', ['verbose'])
+    except getopt.GetoptError as err:
+        print "Exception: GetoptError: ", str(err.args)
+        sys.exit(-2)
+    s_port = None
+    profiles = list()
+    for opt, arg in opts:
+        if opt in ("-p",):
+            if arg.isdigit() and is_valid_port(int(arg)):
+                s_port = int(arg)
+        elif opt in ("-f",):
+            pairs = arg.split(':')
+            if 2 == len(pairs) and is_valid_ipv4(pairs[0]) and \
+                pairs[1].isdigit() and is_valid_port(int(pairs[1])):
+                profiles.append(Profile(sport=None,
+                                        dip=pairs[0],
+                                        dport=int(pairs[1])))
+        elif opt in ('--verbose',):
+            global DEBUG
+            DEBUG = True
+        elif opt in ('-h', '--help'):
+            print_usage()
+            sys.exit(0)
+    profiles.insert(0, Profile(sport=s_port, dip=None, dport=None))
+    return profiles
+
+
 def parse_parameter(argv):
     try:
         opts, args = getopt.getopt(argv, 'hp:f:', ['verbose'])
@@ -108,8 +140,8 @@ def parse_parameter(argv):
     s_port, d_ip, d_port = None, None, None
     for opt, arg in opts:
         if opt in ("-p",):
-            if arg.isdigit():
-                s_port = int(arg) if 0 < int(arg) < 65536 else None
+            if arg.isdigit() and is_valid_port(int(arg)):
+                s_port = int(arg)
         elif opt in ("-f",):
             pairs = arg.split(':')
             if 2 == len(pairs) and is_valid_ipv4(pairs[0]) and \
@@ -144,14 +176,105 @@ class MyThreadedUDPRequestHandler(BaseRequestHandler):
             print debugmsg
         # Man in the Middle
         socket_mim = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        socket_mim.sendto(query_payload, (BACKEND_DNS_SERVER, BACKEND_DNS_PORT))
-        response_payload = socket_mim.recv(1024)
+        socket_mim.settimeout(CONST_TIMEOUT)
+        try:
+            socket_mim.sendto(query_payload, (BACKEND_DNS_SERVER,
+                                              BACKEND_DNS_PORT))
+            response_payload = socket_mim.recv(1024)
+            socket_client.sendto(response_payload, self.client_address)
+        except socket.timeout:
+            print 'EXCEPTION: socket.timeout in', CONST_TIMEOUT
+        except socket.error as err:
+            print 'EXCEPTION: Watchout', str(err)
+        finally:
+            socket_mim.close()
+
+
+class myThreadDig(threading.Thread):
+    def __init__(self, payload, ip, port, answer_pool):
+        threading.Thread.__init__(self)
+        self.payload = payload
+        self.ip = ip
+        self.port = port
+        self.answer = answer_pool
+        self.socket_mim = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket_mim.settimeout(CONST_TIMEOUT)
+
+    def run(self):
+        cur_thread = threading.current_thread()
+        if DEBUG:
+            debugmsg = "{}: IP {} Port {}".format(cur_thread.name,
+                                                  self.ip, self.port)
+            print debugmsg
+        try:
+            self.socket_mim.sendto(self.payload, (self.ip, self.port))
+            response_payload = self.socket_mim.recv(1024)
+            self.answer.put(response_payload)
+        except socket.timeout:
+            print "EXCEPTION: {} socket.timeout in {} seconds".format(
+                    cur_thread.name, CONST_TIMEOUT)
+
+
+class MyThreadedUDPRequestHandler_ex(BaseRequestHandler):
+
+    def handle(self):
+        cur_thread = threading.current_thread()
+        query_payload = self.request[0].strip()
+        socket_client = self.request[1]
         #
-        socket_client.sendto(response_payload, self.client_address)
+        if DEBUG:
+            debugmsg = "{}: {}".format(cur_thread.name, self.client_address[0])
+            print debugmsg
+        # Man in the Middle
+        socket_mim = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        socket_mim.settimeout(CONST_TIMEOUT)
+        children = list()
+        answers = Queue.Queue()
+        try:
+            for i in BACKEND_DNS_SERVERS:
+                child = myThreadDig(query_payload, i[0], i[1], answers)
+                children.append(child)
+            for i in children:
+                i.start()
+            socket_client.sendto(answers.get(True, CONST_TIMEOUT),
+                                 self.client_address)
+            for i in children:
+                i.join()
+        except socket.timeout:
+            print 'EXCEPTION: socket.timeout in', CONST_TIMEOUT
+        except socket.error as err:
+            print 'EXCEPTION: Watchout', str(err)
+        except Queue.Empty:
+            print 'EXCEPTION: Watchout, no answer returned'
+        finally:
+            socket_mim.close()
 
 
 class MyThreadedUDPServer(ThreadingMixIn, UDPServer):
     pass
+
+
+def invoke_dns_server_ex(configs):
+    global BACKEND_DNS_SERVERS
+    local_server_port = 53  # default
+    # single local profile and multiple forward servers
+    for i in configs:
+        if i.source[1]:
+            local_server_port = i.source[1]
+            continue
+        if i.destination:
+            BACKEND_DNS_SERVERS.append(i.destination)
+    server = MyThreadedUDPServer(('', local_server_port),
+                                 MyThreadedUDPRequestHandler_ex)
+    ip, port = server.server_address
+    print "INFO: service starting at %s %s" % (ip, port)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print "INFO: User Cancel by CTRL + C"
+    finally:
+        server.shutdown()
+    server.server_close()
 
 
 def invoke_dns_server(config):
@@ -175,11 +298,19 @@ if __name__ == '__main__':
     if len(sys.argv[1:]) == 0:
         print_usage()
         sys.exit(0)
-    sport, dip, dport = parse_parameter(sys.argv[1:])
-    if None in (sport, dip, dport):
-        print "ERROR: invalid parameters:", sys.argv[1:]
-        print_usage()
-        sys.exit(-1)
-    profile = Profile(sport=sport, dip=dip, dport=dport)
-    if profile.is_valid():
-        invoke_dns_server(profile)
+    if (sys.argv[1:]).count('-f') <= 1:
+        sport, dip, dport = parse_parameter(sys.argv[1:])
+        if None in (sport, dip, dport):
+            print "ERROR: invalid parameters:", sys.argv[1:]
+            print_usage()
+            sys.exit(-1)
+        profile = Profile(sport=sport, dip=dip, dport=dport)
+        if profile.is_valid():
+            invoke_dns_server(profile)
+    else:  # multiple backend servers
+        profiles = parse_parameter_s(sys.argv[1:])
+        if len(profiles) <= 1:
+            print "ERROR: insufficient parameters:", sys.argv[1:]
+            print_usage()
+            sys.exit(-1)
+        invoke_dns_server_ex(profiles)
