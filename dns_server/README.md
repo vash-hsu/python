@@ -2,7 +2,7 @@
 -----
 ### Forward DNS Server ###
 - **dns_forward_server.py**
-- redirect dns request/response between client and backend servers
+ + redirect dns request/response between client and backend servers
 
 
 #### dns_forward_server.py -h ####
@@ -46,15 +46,16 @@
 
 
 #### coverage ####
+- **python -m coverage run --branch -a test_dns_forward_server.py
 - **python -m coverage run --branch -a dns_forward_server.py -p 53 -f 8.8.8.8:53 -f 168.1.1:53 -f 192.168.100.100:53 --verbose**
- - **python -m coverage report**
- +
+ - **python -m coverage report** 
+ + 
  + Name                         Stmts   Miss Branch BrPart  Cover
  + --------------------------------------------------------------
- + dns_forward_server.py          223     79     66      7    63%
+ + dns_forward_server.py          189     34     52      6    80%
  + test_dns_forward_server.py      69      4      2      1    93%
  + --------------------------------------------------------------
- + TOTAL                          292     83     68      8    69%
+ + TOTAL                          258     38     54      7    83%
 - **python -m coverage html**
  + dns_forward_server_py-0c0f68f.png
 
@@ -65,6 +66,6 @@
 
 ####end-to-end RAT test####
 - **test command for server**
- + dns_forward_server.py -p 53 -f 8.8.8.8:53 -f 168.1.1:53 -f 192.168.100.100:53 --verbose**
+ + dns_forward_server.py -p 53 -f 8.8.8.8:53 -f 168.1.1:53 -f 192.168.100.100:53 --verbose
 - **test command for client on Windows**
  + for /l %x in (1, 1, 10) do nslookup www.google.com 127.0.0.1

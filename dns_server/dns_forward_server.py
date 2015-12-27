@@ -134,32 +134,6 @@ def parse_parameter(argv):
     return profiles
 
 
-def parse_parameter_EOS(argv):
-    try:
-        opts, args = getopt.getopt(argv, 'hp:f:', ['verbose'])
-    except getopt.GetoptError as err:
-        print "Exception: GetoptError: ", str(err.args)
-        sys.exit(-2)
-    s_port, d_ip, d_port = None, None, None
-    for opt, arg in opts:
-        if opt in ("-p",):
-            if arg.isdigit() and is_valid_port(int(arg)):
-                s_port = int(arg)
-        elif opt in ("-f",):
-            pairs = arg.split(':')
-            if 2 == len(pairs) and is_valid_ipv4(pairs[0]) and \
-                pairs[1].isdigit() and is_valid_port(int(pairs[1])):
-                d_ip = pairs[0]
-                d_port = int(pairs[1])
-        elif opt in ('--verbose',):
-            global DEBUG
-            DEBUG = True
-        elif opt in ('-h', '--help'):
-            print_usage()
-            sys.exit(0)
-    return s_port, d_ip, d_port
-
-
 class UDPHandler(BaseRequestHandler):
 
     def handle(self):
@@ -286,23 +260,6 @@ def invoke_dns_server(configs):
         sys.stdout.flush()
     finally:
         server.shutdown()
-    server.server_close()
-
-
-def invoke_dns_server_EOS(config):
-    global BACKEND_DNS_SERVER
-    BACKEND_DNS_SERVER = config.dip
-    global BACKEND_DNS_PORT
-    BACKEND_DNS_PORT = config.dport
-    server = MyThreadedUDPServer(('', config.sport),
-                                 MyThreadedUDPRequestHandler)
-    ip, port = server.server_address
-    print "INFO: service starting at %s %s" % (ip, port)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print "INFO: User Cancel by CTRL + C"
-    server.shutdown()
     server.server_close()
 
 
