@@ -28,6 +28,7 @@ BACKEND_DNS_SERVER = '8.8.8.8'
 BACKEND_DNS_PORT = 53
 BACKEND_DNS_SERVERS = list()
 
+
 def print_usage():
     print '''\
 Usage: -p <PORT>  -f IPv4:PORT  [--verbose]  [-h]
@@ -37,6 +38,7 @@ Usage: -p <PORT>  -f IPv4:PORT  [--verbose]  [-h]
     --verbose    : show debug/diagnostic info on stdout
 Example:
     -p 10053 -f 8.8.8.8:53
+    -p 10053 -f 8.8.8.8:53 -f 168.95.1.1:53
     '''
 
 
@@ -102,7 +104,7 @@ class Profile:
         return self.dip, self.dport
 
 
-def parse_parameter_s(argv):
+def parse_parameter(argv):
     try:
         opts, args = getopt.getopt(argv, 'hp:f:', ['verbose'])
     except getopt.GetoptError as err:
@@ -127,11 +129,12 @@ def parse_parameter_s(argv):
         elif opt in ('-h', '--help'):
             print_usage()
             sys.exit(0)
-    profiles.insert(0, Profile(sport=s_port, dip=None, dport=None))
+    if s_port:
+        profiles.insert(0, Profile(sport=s_port, dip=None, dport=None))
     return profiles
 
 
-def parse_parameter(argv):
+def parse_parameter_EOS(argv):
     try:
         opts, args = getopt.getopt(argv, 'hp:f:', ['verbose'])
     except getopt.GetoptError as err:
@@ -206,6 +209,7 @@ class myThreadDig(threading.Thread):
             debugmsg = "{}: IP {} Port {}".format(cur_thread.name,
                                                   self.ip, self.port)
             print debugmsg
+            sys.stdout.flush()
         try:
             self.socket_mim.sendto(self.payload, (self.ip, self.port))
             response_payload = self.socket_mim.recv(1024)
@@ -215,7 +219,7 @@ class myThreadDig(threading.Thread):
                     cur_thread.name, CONST_TIMEOUT)
 
 
-class MyThreadedUDPRequestHandler_ex(BaseRequestHandler):
+class MyThreadedUDPRequestHandler(BaseRequestHandler):
 
     def handle(self):
         cur_thread = threading.current_thread()
@@ -225,6 +229,7 @@ class MyThreadedUDPRequestHandler_ex(BaseRequestHandler):
         if DEBUG:
             debugmsg = "{}: {}".format(cur_thread.name, self.client_address[0])
             print debugmsg
+            sys.stdout.flush()
         # Man in the Middle
         socket_mim = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         socket_mim.settimeout(CONST_TIMEOUT)
@@ -242,10 +247,13 @@ class MyThreadedUDPRequestHandler_ex(BaseRequestHandler):
                 i.join()
         except socket.timeout:
             print 'EXCEPTION: socket.timeout in', CONST_TIMEOUT
+            sys.stdout.flush()
         except socket.error as err:
             print 'EXCEPTION: Watchout', str(err)
+            sys.stdout.flush()
         except Queue.Empty:
             print 'EXCEPTION: Watchout, no answer returned'
+            sys.stdout.flush()
         finally:
             socket_mim.close()
 
@@ -254,7 +262,7 @@ class MyThreadedUDPServer(ThreadingMixIn, UDPServer):
     pass
 
 
-def invoke_dns_server_ex(configs):
+def invoke_dns_server(configs):
     global BACKEND_DNS_SERVERS
     local_server_port = 53  # default
     # single local profile and multiple forward servers
@@ -265,19 +273,23 @@ def invoke_dns_server_ex(configs):
         if i.destination:
             BACKEND_DNS_SERVERS.append(i.destination)
     server = MyThreadedUDPServer(('', local_server_port),
-                                 MyThreadedUDPRequestHandler_ex)
+                                 MyThreadedUDPRequestHandler)
     ip, port = server.server_address
     print "INFO: service starting at %s %s" % (ip, port)
+    sys.stdout.flush()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print "INFO: User Cancel by CTRL + C"
+        sys.stdout.flush()
+        ## what should I do here to clean up?
+        sys.stdout.flush()
     finally:
         server.shutdown()
     server.server_close()
 
 
-def invoke_dns_server(config):
+def invoke_dns_server_EOS(config):
     global BACKEND_DNS_SERVER
     BACKEND_DNS_SERVER = config.dip
     global BACKEND_DNS_PORT
@@ -298,19 +310,9 @@ if __name__ == '__main__':
     if len(sys.argv[1:]) == 0:
         print_usage()
         sys.exit(0)
-    if (sys.argv[1:]).count('-f') <= 1:
-        sport, dip, dport = parse_parameter(sys.argv[1:])
-        if None in (sport, dip, dport):
-            print "ERROR: invalid parameters:", sys.argv[1:]
-            print_usage()
-            sys.exit(-1)
-        profile = Profile(sport=sport, dip=dip, dport=dport)
-        if profile.is_valid():
-            invoke_dns_server(profile)
-    else:  # multiple backend servers
-        profiles = parse_parameter_s(sys.argv[1:])
-        if len(profiles) <= 1:
-            print "ERROR: insufficient parameters:", sys.argv[1:]
-            print_usage()
-            sys.exit(-1)
-        invoke_dns_server_ex(profiles)
+    profiles = parse_parameter(sys.argv[1:])
+    if len(profiles) <= 1:  # 1st: hosting server, 2nd ~ : forward servers
+        print "ERROR: insufficient parameters:", sys.argv[1:]
+        print_usage()
+        sys.exit(-1)
+    invoke_dns_server(profiles)

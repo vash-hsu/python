@@ -29,41 +29,48 @@ class UtilityTest(unittest.TestCase):
 
     def testNothing(self):
         log_desc('no parameters specified')
-        self.assertEqual(parse_parameter([]), (None, None, None))
+        return_settings = parse_parameter([])
+        self.assertEqual(len(return_settings), 0)
 
     def testExample(self):
         testdata = '-p 10053 -f 8.8.8.8:53'
         log_desc(testdata)
-        self.assertEqual(parse_parameter(testdata.split()),
-                         (10053, '8.8.8.8', 53))
+        return_settings = parse_parameter(testdata.split())
+        self.assertEqual(len(return_settings), 2)
+        self.assertEqual(return_settings[0].source[1], 10053)
+        self.assertEqual(return_settings[1].destination, ('8.8.8.8', 53))
 
     def testPrivateIP(self):
         testdata = '-p 10053 -f 192.168.1.1:53'
         log_desc(testdata)
-        self.assertEqual(parse_parameter(testdata.split()),
-                         (10053, '192.168.1.1', 53))
+        return_settings = parse_parameter(testdata.split())
+        self.assertEqual(return_settings[1].destination, ('192.168.1.1', 53))
 
     def testUserError(self):
         testdata = '-p 10053 -f 192.168.1.153'
         log_desc(testdata)
-        self.assertEqual(parse_parameter(testdata.split()),
-                         (10053, None, None))
+        return_settings = parse_parameter(testdata.split())
+        self.assertEqual(len(return_settings), 1)
+        self.assertEqual(return_settings[0].source[1], 10053)
         testdata = '-p 99999 -f 192.168.1.1:53'
         log_desc(testdata)
-        self.assertEqual(parse_parameter(testdata.split()),
-                         (None, '192.168.1.1', 53))
+        return_settings = parse_parameter(testdata.split())
+        self.assertEqual(len(return_settings), 1)
+        self.assertEqual(return_settings[0].destination, ('192.168.1.1', 53))
 
     def testNotSupportIPv6(self):
         testdata = '-p 10053 -f fe80::a838:bed2:7ef8:5950:53'
         log_desc(testdata)
-        self.assertEqual(parse_parameter(testdata.split()),
-                         (10053, None, None))
+        return_settings = parse_parameter(testdata.split())
+        self.assertEqual(len(return_settings), 1)
+        self.assertEqual(return_settings[0].source, (None, 10053))
 
     def testNotSupportDomainName(self):
         testdata = '-p 10053 -f google-public-dns-a.google.com:53'
         log_desc(testdata)
-        self.assertEqual(parse_parameter(testdata.split()),
-                         (10053, None, None))
+        return_settings = parse_parameter(testdata.split())
+        self.assertEqual(len(return_settings), 1)
+        self.assertEqual(return_settings[0].source, (None, 10053))
 
 
 class DNSServerTest(unittest.TestCase):
