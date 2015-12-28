@@ -7,11 +7,10 @@
 
 #### dns_forward_server.py -h ####
 - **Usage**
- + Usage: -p <PORT>  -f IPv4:PORT  [--verbose]  [-h]
+ + Usage: -p <PORT>  -f IPv4:PORT  [-h]
  +   -p PORT      : i.e. 10053 (root is necessary if port < 1024)
  +   -f IPv4:PORT : i.e. 8.8.8.8:53
  +   -h           : show help
- +   --verbose    : show debug/diagnostic info on stdout
  + Example:
  +   -p 10053 -f 8.8.8.8:53
  +   -p 10053 -f 8.8.8.8:53 -f 168.95.1.1:53
@@ -47,7 +46,7 @@
 
 #### coverage ####
 - **python -m coverage run --branch -a test_dns_forward_server.py
-- **python -m coverage run --branch -a dns_forward_server.py -p 53 -f 8.8.8.8:53 -f 168.1.1:53 -f 192.168.100.100:53 --verbose**
+- **python -m coverage run --branch -a dns_forward_server.py -p 53 -f 8.8.8.8:53 -f 168.95.1.1:53 -f 192.168.100.100:53**
  - **python -m coverage report** 
  + 
  + Name                         Stmts   Miss Branch BrPart  Cover
@@ -66,6 +65,8 @@
 
 ####end-to-end RAT test####
 - **test command for server**
- + dns_forward_server.py -p 53 -f 8.8.8.8:53 -f 168.1.1:53 -f 192.168.100.100:53 --verbose
+ + dns_forward_server.py -p 53 -f 8.8.8.8:53 -f 168.95.1.1:53 -f 192.168.100.100:53
+ - or
+ + dns_forward_server_verbose.py -p 53 -f 8.8.8.8:53 -f 168.95.1.1:53 -f 192.168.100.100:53 --verbose
 - **test command for client on Windows**
  + for /l %x in (1, 1, 10) do nslookup www.google.com 127.0.0.1

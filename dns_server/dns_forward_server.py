@@ -14,8 +14,8 @@ import threading
 import socket
 import Queue
 
-CONST_VERSION = '0.1'
-DEBUG = False
+CONST_VERSION = '0.2'
+DEBUG = None
 CONST_TIMEOUT = 2  # 2 seconds
 
 VERIFIED_Not_IP = 0
@@ -24,8 +24,7 @@ VERIFIED_IPv4_Global = 2
 VERIFIED_IPv6_Private = 3
 VERIFIED_IPv6_Global = 4
 
-BACKEND_DNS_SERVER = '8.8.8.8'
-BACKEND_DNS_PORT = 53
+
 BACKEND_DNS_SERVERS = list()
 
 
@@ -35,7 +34,6 @@ Usage: -p <PORT>  -f IPv4:PORT  [--verbose]  [-h]
     -p PORT      : i.e. 10053 (root is necessary if port < 1024)
     -f IPv4:PORT : i.e. 8.8.8.8:53
     -h           : show help
-    --verbose    : show debug/diagnostic info on stdout
 Example:
     -p 10053 -f 8.8.8.8:53
     -p 10053 -f 8.8.8.8:53 -f 168.95.1.1:53
@@ -104,11 +102,13 @@ class Profile:
         return self.dip, self.dport
 
 
-def parse_parameter(argv):
+def parse_parameter(argv, log_cb=None):
     try:
         opts, args = getopt.getopt(argv, 'hp:f:', ['verbose'])
     except getopt.GetoptError as err:
-        print "Exception: GetoptError: ", str(err.args)
+        if log_cb:
+            log_cb.error('Exception: GetoptError: '+str(err.args))
+        # print "Exception: GetoptError: ", str(err.args)
         sys.exit(-2)
     s_port = None
     profiles = list()
@@ -123,9 +123,6 @@ def parse_parameter(argv):
                 profiles.append(Profile(sport=None,
                                         dip=pairs[0],
                                         dport=int(pairs[1])))
-        elif opt in ('--verbose',):
-            global DEBUG
-            DEBUG = True
         elif opt in ('-h', '--help'):
             print_usage()
             sys.exit(0)
@@ -134,40 +131,7 @@ def parse_parameter(argv):
     return profiles
 
 
-class UDPHandler(BaseRequestHandler):
-
-    def handle(self):
-        (data, socket_client) = self.request
-        socket_client.sendto(data, self.client_address)
-
-
-class MyThreadedUDPRequestHandler(BaseRequestHandler):
-
-    def handle(self):
-        cur_thread = threading.current_thread()
-        query_payload = self.request[0].strip()
-        socket_client = self.request[1]
-        #
-        if DEBUG:
-            debugmsg = "{}: {}".format(cur_thread.name, self.client_address[0])
-            print debugmsg
-        # Man in the Middle
-        socket_mim = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        socket_mim.settimeout(CONST_TIMEOUT)
-        try:
-            socket_mim.sendto(query_payload, (BACKEND_DNS_SERVER,
-                                              BACKEND_DNS_PORT))
-            response_payload = socket_mim.recv(1024)
-            socket_client.sendto(response_payload, self.client_address)
-        except socket.timeout:
-            print 'EXCEPTION: socket.timeout in', CONST_TIMEOUT
-        except socket.error as err:
-            print 'EXCEPTION: Watchout', str(err)
-        finally:
-            socket_mim.close()
-
-
-class myThreadDig(threading.Thread):
+class ThreadDig(threading.Thread):
     def __init__(self, payload, ip, port, answer_pool):
         threading.Thread.__init__(self)
         self.payload = payload
@@ -182,15 +146,17 @@ class myThreadDig(threading.Thread):
         if DEBUG:
             debugmsg = "{}: IP {} Port {}".format(cur_thread.name,
                                                   self.ip, self.port)
-            print debugmsg
-            sys.stdout.flush()
+            DEBUG.debug(debugmsg)
         try:
             self.socket_mim.sendto(self.payload, (self.ip, self.port))
             response_payload = self.socket_mim.recv(1024)
             self.answer.put(response_payload)
+            if DEBUG:
+                DEBUG.dpi('dns', response_payload)
         except socket.timeout:
-            print "EXCEPTION: {} socket.timeout in {} seconds".format(
-                    cur_thread.name, CONST_TIMEOUT)
+            if DEBUG:
+                DEBUG.warning("EXCEPTION: {} socket.timeout in {} seconds"
+                              .format(cur_thread.name, CONST_TIMEOUT))
 
 
 class MyThreadedUDPRequestHandler(BaseRequestHandler):
@@ -202,8 +168,7 @@ class MyThreadedUDPRequestHandler(BaseRequestHandler):
         #
         if DEBUG:
             debugmsg = "{}: {}".format(cur_thread.name, self.client_address[0])
-            print debugmsg
-            sys.stdout.flush()
+            DEBUG.debug(debugmsg)
         # Man in the Middle
         socket_mim = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         socket_mim.settimeout(CONST_TIMEOUT)
@@ -211,23 +176,26 @@ class MyThreadedUDPRequestHandler(BaseRequestHandler):
         answers = Queue.Queue()
         try:
             for i in BACKEND_DNS_SERVERS:
-                child = myThreadDig(query_payload, i[0], i[1], answers)
+                child = ThreadDig(query_payload, i[0], i[1], answers)
                 children.append(child)
             for i in children:
                 i.start()
-            socket_client.sendto(answers.get(True, CONST_TIMEOUT),
-                                 self.client_address)
+            response_payload = answers.get(True, CONST_TIMEOUT)
+            socket_client.sendto(response_payload, self.client_address)
+            if DEBUG:
+                DEBUG.dpi('dns', query_payload)
+                DEBUG.dpi('dns', response_payload)
             for i in children:
                 i.join()
         except socket.timeout:
-            print 'EXCEPTION: socket.timeout in', CONST_TIMEOUT
-            sys.stdout.flush()
+            if DEBUG:
+                DEBUG.warning('EXCEPTION: socket.timeout in %d' % CONST_TIMEOUT)
         except socket.error as err:
-            print 'EXCEPTION: Watchout', str(err)
-            sys.stdout.flush()
+            if DEBUG:
+                DEBUG.warning('EXCEPTION: Watchout %s' % str(err))
         except Queue.Empty:
-            print 'EXCEPTION: Watchout, no answer returned'
-            sys.stdout.flush()
+            if DEBUG:
+                DEBUG.warning('EXCEPTION: Watchout, no answer returned')
         finally:
             socket_mim.close()
 
@@ -236,7 +204,10 @@ class MyThreadedUDPServer(ThreadingMixIn, UDPServer):
     pass
 
 
-def invoke_dns_server(configs):
+def invoke_dns_server(configs, log_cb=None):
+    global DEBUG
+    if log_cb:
+        DEBUG = log_cb
     global BACKEND_DNS_SERVERS
     local_server_port = 53  # default
     # single local profile and multiple forward servers
@@ -249,15 +220,14 @@ def invoke_dns_server(configs):
     server = MyThreadedUDPServer(('', local_server_port),
                                  MyThreadedUDPRequestHandler)
     ip, port = server.server_address
-    print "INFO: service starting at %s %s" % (ip, port)
-    sys.stdout.flush()
+    if log_cb:
+        log_cb.info("service starting at %s %s" % (ip, port))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print "INFO: User Cancel by CTRL + C"
-        sys.stdout.flush()
-        ## what should I do here to clean up?
-        sys.stdout.flush()
+        if log_cb:
+            log_cb.info("User Cancel by CTRL + C")
+        # what should I do here to clean up?
     finally:
         server.shutdown()
     server.server_close()
