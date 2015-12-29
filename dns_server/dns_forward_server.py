@@ -151,8 +151,8 @@ class ThreadDig(threading.Thread):
             self.socket_mim.sendto(self.payload, (self.ip, self.port))
             response_payload = self.socket_mim.recv(1024)
             self.answer.put(response_payload)
-            if DEBUG:
-                DEBUG.dpi('dns', response_payload)
+            #if DEBUG:
+            #    DEBUG.dpi('dns', response_payload)
         except socket.timeout:
             if DEBUG:
                 DEBUG.warning("EXCEPTION: {} socket.timeout in {} seconds"

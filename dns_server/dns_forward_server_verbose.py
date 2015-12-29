@@ -2,6 +2,7 @@
 
 from functools import partial, wraps
 from dns_forward_server import *
+import dnslib
 
 
 # https://wiki.python.org/moin/PythonDecoratorLibrary
@@ -41,7 +42,8 @@ class Logger():
         self.print_stdout("ERROR", message)
 
     def debug(self, message):
-        self.print_stdout("DEBUG", message)
+        # self.print_stdout("DEBUG", message)
+        pass
 
     def info(self, message):
         self.print_stdout("INFO", message)
@@ -49,9 +51,23 @@ class Logger():
     def warning(self, message):
         self.print_stdout("WARNING", message)
 
+    # https://tools.ietf.org/html/rfc1035
+    # https://pypi.python.org/pypi/dnslib
+    # https://bitbucket.org/paulc/dnslib
     def dpi(self, protocol, payload):
-        pass
-
+        if protocol == 'dns':
+            reader = dnslib.DNSRecord.parse(payload)
+            if reader.header.qr == 1: # response
+                # self.debug('\n'+str(reader.header))
+                interested = []
+                for each_rr in reader.rr:
+                    if each_rr.rtype in (1, 28):  # A or AAAA
+                        interested.append("%d{%s}" % (each_rr.rtype,
+                                                       str(each_rr.rdata)))
+                self.print_stdout("Response", ';'.join(interested))
+            else: # query
+                self.print_stdout("Query", "%d{%s}" %
+                                  (reader.q.qtype, reader.q.get_qname()))
 
 if __name__ == '__main__':
     if len(sys.argv[1:]) == 0:
