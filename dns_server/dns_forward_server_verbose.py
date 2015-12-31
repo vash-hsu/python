@@ -68,7 +68,10 @@ class Logger():
     def _dpiengine(self, protocol, payload):
         if protocol == 'dns':
             reader = dnslib.DNSRecord.parse(payload)
-            if reader.header.qr == 1: # response
+            if reader.header.rcode == 3:
+                self.debug("Reply Code 3: No such name")
+                return ['NXDOMAIN']
+            elif reader.header.qr == 1: # response
                 interested = []
                 for each_rr in reader.rr:
                     if each_rr.rtype == 1:
@@ -85,6 +88,8 @@ class Logger():
                     dns_type = 'A'
                 elif reader.q.qtype == 28:
                     dns_type = 'AAAA'
+                elif reader.q.qtype == 12:
+                    dns_type = 'PTR'
                 else:
                     return []
                 return ["%s{%s}" % (dns_type, reader.q.get_qname())]

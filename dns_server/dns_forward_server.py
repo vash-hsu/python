@@ -13,8 +13,9 @@ from SocketServer import ThreadingMixIn, UDPServer, BaseRequestHandler
 import threading
 import socket
 import Queue
+import inspect
 
-CONST_VERSION = '0.2'
+CONST_VERSION = '0.3'
 DEBUG = None
 CONST_TIMEOUT = 2  # 2 seconds
 
@@ -39,6 +40,11 @@ Example:
     -p 10053 -f 8.8.8.8:53 -f 168.95.1.1:53
     '''
 
+
+def whereami():
+    icu = inspect.currentframe()
+    funcname = inspect.stack()[1][3]
+    return str("%s(%d)" % (funcname, icu.f_back.f_lineno))
 
 # VERIFIED_IPv4_Private, VERIFIED_IPv4_Global
 # VERIFIED_IPv6_Private, VERIFIED_IPv6_Global, VERIFIED_Not_IP
@@ -150,28 +156,27 @@ class ThreadDig(threading.Thread):
         try:
             self.socket_mim.sendto(self.payload, (self.ip, self.port))
             response_payload = self.socket_mim.recv(1024)
-            self.answer.put(response_payload)
-            #if DEBUG:
-            #    DEBUG.dpi('dns', response_payload)
+            self.answer.put((self.ip, response_payload))
         except socket.timeout:
             if DEBUG:
                 DEBUG.warning("EXCEPTION: {} socket.timeout in {} seconds"
                               .format(cur_thread.name, CONST_TIMEOUT))
+        finally:
+            self.socket_mim.close()
 
 
 class MyThreadedUDPRequestHandler(BaseRequestHandler):
 
     def handle(self):
         cur_thread = threading.current_thread()
-        query_payload = self.request[0].strip()
+        query_payload = self.request[0]
         socket_client = self.request[1]
         #
         if DEBUG:
             debugmsg = "{}: {}".format(cur_thread.name, self.client_address[0])
             DEBUG.debug(debugmsg)
-        # Man in the Middle
-        socket_mim = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        socket_mim.settimeout(CONST_TIMEOUT)
+            DEBUG.info("%s --> " % self.client_address[0])
+            DEBUG.dpi('dns', query_payload)
         children = list()
         answers = Queue.Queue()
         try:
@@ -180,10 +185,10 @@ class MyThreadedUDPRequestHandler(BaseRequestHandler):
                 children.append(child)
             for i in children:
                 i.start()
-            response_payload = answers.get(True, CONST_TIMEOUT)
+            source, response_payload = answers.get(True, CONST_TIMEOUT)
             socket_client.sendto(response_payload, self.client_address)
             if DEBUG:
-                DEBUG.dpi('dns', query_payload)
+                DEBUG.info('<-- %s' % source)
                 DEBUG.dpi('dns', response_payload)
             for i in children:
                 i.join()
@@ -196,8 +201,9 @@ class MyThreadedUDPRequestHandler(BaseRequestHandler):
         except Queue.Empty:
             if DEBUG:
                 DEBUG.warning('EXCEPTION: Watchout, no answer returned')
-        finally:
-            socket_mim.close()
+        except BaseException as err:
+            if DEBUG:
+                DEBUG.warning('Oops! %s %s' % (str(err), whereami()))
 
 
 class MyThreadedUDPServer(ThreadingMixIn, UDPServer):
@@ -222,8 +228,14 @@ def invoke_dns_server(configs, log_cb=None):
     ip, port = server.server_address
     if log_cb:
         log_cb.info("service starting at %s %s" % (ip, port))
+    server_thread = threading.Thread(target=server.serve_forever)
+    server_thread.daemon = True
     try:
-        server.serve_forever()
+        server_thread.start()
+        while raw_input().lower() not in ('exit', 'quit'):
+            continue
+        if log_cb:
+            log_cb.info("User Cancel")
     except KeyboardInterrupt:
         if log_cb:
             log_cb.info("User Cancel by CTRL + C")
