@@ -18,49 +18,39 @@
 
 #### test_dns_forward_server.py ####
 - **test_dns_forward_server.py**
- + .
- + CASE: UtilityTest.testExample
- + DESC: -p 10053 -f 8.8.8.8:53
- + .
- + CASE: UtilityTest.testNotSupportDomainName
- + DESC: -p 10053 -f google-public-dns-a.google.com:53
- + .
- + CASE: UtilityTest.testNotSupportIPv6
- + DESC: -p 10053 -f fe80::a838:bed2:7ef8:5950:53
- + .
- + CASE: UtilityTest.testNothing
- + DESC: no parameters specified
- + .
- + CASE: UtilityTest.testPrivateIP
- + DESC: -p 10053 -f 192.168.1.1:53
- + .
- + CASE: UtilityTest.testUserError
- + DESC: -p 10053 -f 192.168.1.153
- + DESC: -p 99999 -f 192.168.1.1:53
- + .
  + ----------------------------------------------------------------------
  + Ran 7 tests in 0.020s
  +
  + OK
 
+#### test_dns_forward_server_verbose.py ####
+- **test_dns_forward_server_verbose.py**
+ + .
+ + CASE: DPITest.testAResponse
+ + DESC: Type A Response for google, multiple RR
+ + .
+ + CASE: DPITest.testAServerFailure
+ + DESC: Type A Server Failure
+ + WARNING: dnslib.DNSError: Error unpacking DNSQuestion [offset=13]: Not enough by
+ + tes [offset=13,remaining=21,requested=46]
+ + DESC: there should be no answer returned
+ + .
+ + ----------------------------------------------------------------------
+ + Ran 8 tests in 0.020s
+ + 
+ + OK
 
 #### coverage ####
 - **python -m coverage run --branch -a test_dns_forward_server.py
+- **python -m coverage run --branch -a test_dns_forward_server.py
 - **python -m coverage run --branch -a dns_forward_server.py -p 53 -f 8.8.8.8:53 -f 168.95.1.1:53 -f 192.168.100.100:53**
- - **python -m coverage report** 
- + 
- + Name                         Stmts   Miss Branch BrPart  Cover
- + --------------------------------------------------------------
- + dns_forward_server.py          189     34     52      6    80%
- + test_dns_forward_server.py      69      4      2      1    93%
- + --------------------------------------------------------------
- + TOTAL                          258     38     54      7    83%
+- **python -m coverage report** 
 - **python -m coverage html**
- + dns_forward_server_py-0c0f68f.png
 
 
 ####unittest: test_dns_forward_server.py####
 - **test_dns_forward_server.py**
+- **test_dns_forward_server_verbose.py**
 
 
 ####end-to-end RAT test####

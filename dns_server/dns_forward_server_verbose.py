@@ -54,20 +54,52 @@ class Logger():
     # https://tools.ietf.org/html/rfc1035
     # https://pypi.python.org/pypi/dnslib
     # https://bitbucket.org/paulc/dnslib
-    def dpi(self, protocol, payload):
+
+    def dpiengine(self, protocol, payload):
+        result = []
+        try:
+            result = self._dpiengine(protocol, payload)
+        except dnslib.DNSError as err:
+            self.warning("dnslib.DNSError: " + str(err))
+        except BaseException:
+            pass
+        return result
+
+    def _dpiengine(self, protocol, payload):
         if protocol == 'dns':
             reader = dnslib.DNSRecord.parse(payload)
             if reader.header.qr == 1: # response
-                # self.debug('\n'+str(reader.header))
                 interested = []
                 for each_rr in reader.rr:
-                    if each_rr.rtype in (1, 28):  # A or AAAA
-                        interested.append("%d{%s}" % (each_rr.rtype,
-                                                       str(each_rr.rdata)))
-                self.print_stdout("Response", ';'.join(interested))
+                    if each_rr.rtype == 1:
+                        dns_type = 'A'
+                    elif each_rr.rtype == 28:
+                        dns_type = 'AAAA'
+                    else:
+                        continue
+                    interested.append("%s{%s}" % (dns_type,
+                                                  str(each_rr.rdata)))
+                return interested
             else: # query
-                self.print_stdout("Query", "%d{%s}" %
-                                  (reader.q.qtype, reader.q.get_qname()))
+                if reader.q.qtype == 1:
+                    dns_type = 'A'
+                elif reader.q.qtype == 28:
+                    dns_type = 'AAAA'
+                else:
+                    return []
+                return ["%s{%s}" % (dns_type, reader.q.get_qname())]
+        return []
+
+    def dpiengine_worry_free(self, protocol, payload):
+        try:
+            return self._dpiengine()
+        except Exception:
+            return []
+
+    def dpi(self, protocol, payload):
+        for i in self.dpiengine(protocol, payload):
+            self.print_stdout("DPI", i)
+
 
 if __name__ == '__main__':
     if len(sys.argv[1:]) == 0:
