@@ -1,31 +1,52 @@
 #!/usr/bin/env python
-# ---------- ---------- ---------- ---------- ----------
-# 2016/01/04 @ Vash Hsu, porting from Perl to Python
-#
-# Purpose
-#    Outlook --> SMTP 127.0.0.1 --> 10025 port listened by SMTP2LocalEML
-#    --> create folder under working directory
-#    --> save raw mail from SMTP protocol in name/form of
-#   (to do)
-#        YearMonthDay-HourMinuteSecond.eml
-#    --> save attached RFC822
-#        into YearMonthDay-HourMinuteSecond\00000001.eml
-#        into YearMonthDay-HourMinuteSecond\00000002.eml
-# ---------- ---------- ---------- ---------- ----------
 
 import inspect
 import threading
 import SocketServer
 import os, sys
 from hashlib import sha1
+import datetime
+import time
 
-Version = '20160103-v0.2'
+'''
+2016/01/04 @ Vash Hsu, porting from Perl to Python
+Purpose
+   Outlook --> SMTP 127.0.0.1 --> 10025 port listened by SMTP2EML
+   --> create folder under working directory
+   --> save raw mail from SMTP protocol in name/form of
+       Sub-Folder: SHA1(email address)
+       each Email:
+           YearMonthDay-HourMinuteSecond-SHA1.eml
+  (to do)
+   --> save attached RFC822
+       into YearMonthDay-HourMinuteSecond\00000001.eml
+       into YearMonthDay-HourMinuteSecond\00000002.eml
+'''
+
+
+Version = '20160105-v0.3'
 Default_Buffer_Size = 1024
 RFC_NewLine = '\r\n'
 Default_Banner = 'SMTP2EML Simple Mail Transfer Service'
 Default_FQDN = "mail.example.com"
 Default_MailStore = ".mailstore"
 MailStorePath = Default_MailStore
+
+
+def uuid(input_buffer):
+    target = sha1()
+    if isinstance(input_buffer, list):
+        for i in input_buffer:
+            target.update(i)
+    else:
+        target.update(input_buffer)
+    return_uuid = target.hexdigest()
+    return return_uuid
+
+
+def timestamp():
+    t = time.time()
+    return datetime.datetime.fromtimestamp(t).strftime('%Y%m%d-%H%M%S')
 
 
 def whereami():
@@ -67,6 +88,8 @@ class Profile:
     def setup(self, name, value):
         if name in self.config:
             self.config[name] = value
+            return True
+        return False
 
     def dump(self):
         for i in self.config:
@@ -262,14 +285,10 @@ class ThreadedSMTPHandler(SocketServer.StreamRequestHandler):
 
     def write_maildata_to_local_eml_file(self, folder_path, to_address,
                                          message):
-        target = sha1()
-        target.update(message)
-        message_id = target.hexdigest()
+        message_id = "%s_%s" % (timestamp(), uuid(message))
         for i in to_address:
             # security issue if address give us surprise
-            target = sha1()
-            target.update(i.lower())
-            base_path = os.path.join(folder_path, target.hexdigest())
+            base_path = os.path.join(folder_path, uuid(i.lower()))
             debug_helper("%s = %s" % (repr(i), base_path))
             try:
                 if not os.path.exists(base_path):

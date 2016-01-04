@@ -36,7 +36,6 @@ class SMTPUtilTest(unittest.TestCase):
                                     "..line2" + RFC_NewLine,
                                     "...line3" + RFC_NewLine,
                                     "line end" + RFC_NewLine,
-                                    RFC_NewLine,
                                     "." + RFC_NewLine]
         self.to_client_channel = list()
         self.smtpu._reset()  # this is VERY important
