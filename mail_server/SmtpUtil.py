@@ -119,7 +119,7 @@ class SMTPUtil:
 
     def helo(self, params):
         guest = ' '.join(params) if params else 'Nobody'
-        print "INFO:", "client came from " + guest
+        # print "INFO:", "client came from " + guest
         self.write("250 Hello " + ' '.join(params))
         return 0
 

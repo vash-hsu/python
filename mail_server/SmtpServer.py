@@ -23,7 +23,7 @@ def debug_helper(message, level=2):
     caller_frame_record = inspect.stack()[1+level]
     frame = caller_frame_record[0]
     info = inspect.getframeinfo(frame)
-    return "%s ... %s@%s(%d)" % (message, info.function,
+    return "DEBUG: %s ... %s@%s(%d)" % (message, info.function,
                                  os.path.split(info.filename)[-1],
                                  info.lineno)
 
@@ -78,10 +78,34 @@ class Profile:
         return self.config[whoami()]
 
 
+class ThreadedSMTPServer(SocketServer.ThreadingMixIn,
+                         SocketServer.TCPServer):
+
+    def __init__(self, server_address, handler):
+        self._profile = None
+        self.cb_mailbody = None
+        SocketServer.TCPServer.__init__(self,
+                                        server_address,
+                                        RequestHandlerClass=handler)
+
+    def set_callback_mailbody(self, callback):
+        self.cb_mailbody = callback
+
+    def get_callback_mailbody(self):
+        return self.cb_mailbody
+
+    def set_profile(self, profile):
+        self._profile = profile
+
+    @property
+    def profile(self):
+        return self._profile
+
+
 class ThreadedSMTPHandler(SocketServer.StreamRequestHandler):
 
     def handle(self):
-        smtpu = SMTPUtil(logger,
+        smtpu = SMTPUtil(self.server.profile.logger,
                          self.rfile.readline,
                          self.request.sendall)
         smtpu.banner()
@@ -102,19 +126,21 @@ class ThreadedSMTPHandler(SocketServer.StreamRequestHandler):
             if is_continue < 0:
                 break
             if is_continue > 0:
-                logger('=== content from DATA ===')
-                logger(repr(smtpu.body))
+                if self.server.profile and self.server.profile.debug:
+                    self.server.profile.debug('=== content from DATA ===')
+                    self.server.profile.debug(repr(smtpu.body))
+                body_handler = self.server.get_callback_mailbody()
+                if body_handler:
+                    body_handler(to_address=smtpu.recp_to, message=smtpu.body)
                 smtpu.fresh()
 
 
-class ThreadedSMTPServer(SocketServer.ThreadingMixIn,
-                         SocketServer.TCPServer):
-    pass
-
-
-def host_smtpd(profile):
+def host_smtpd(profile, cb_mailbody=None):
     server = ThreadedSMTPServer((profile.ip, profile.port),
                                 ThreadedSMTPHandler)
+    server.set_profile(profile)
+    if cb_mailbody:
+        server.set_callback_mailbody(cb_mailbody)
     if profile.logger:
         profile.logger("hosting at %s" % str(server.server_address))
         profile.logger("type exit or quit to terminate this service")
@@ -128,7 +154,7 @@ def host_smtpd(profile):
             continue
     except KeyboardInterrupt:
         if profile.debug:
-            profile.debug("DEBUG: User Interrupt by Ctrl + C")
+            profile.debug("User Interrupt by Ctrl + C")
     server.shutdown()
     server.server_close()
 
@@ -136,5 +162,5 @@ def host_smtpd(profile):
 if __name__ == "__main__":
     configuration = Profile()
     configuration.setup('logger', logger)
-    configuration.setup('debug', debugger)
+    # configuration.setup('debug', debugger)
     host_smtpd(configuration)
