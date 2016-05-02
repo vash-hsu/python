@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-VERSION = '0.1'
+VERSION = '0.3'
 
 import os
 import csv
@@ -100,8 +100,10 @@ def cook_input_csv(filename):
     return raw_data
 
 
-def generate_new_filename(filename):
-    return filename
+def generate_new_filename(filename=''):
+    from time import gmtime, strftime
+    print filename + strftime("%Y%b%d_%H%M%S", gmtime())
+    return filename + strftime("%Y%b%d_%H%M%S", gmtime())
 
 
 def retrieve_namelist_from_file(filename):
@@ -117,7 +119,7 @@ def retrieve_namelist_from(target_path):
     if not os.path.exists(target_path):
         return []
     if os.path.isfile(target_path):
-        return retrieve_namelist_from_file()
+        return retrieve_namelist_from_file(target_path)
     if os.path.isdir(target_path):
         namelist = []
         for child_file in os.listdir(target_path):
@@ -132,11 +134,22 @@ def preprocess_config(raw_config):
     cooked = dict()
     if 'input' in raw_config and os.path.exists(raw_config['input']):
         cooked['input'] = cook_input_csv(raw_config['input'])
-    if 'output' in raw_config and not os.path.isdir(raw_config['output']):
-        cooked['output'] = generate_new_filename(raw_config['output'])
+    else:
+        return None # input was essential
+    if 'output' in raw_config:
+        if os.path.isdir(raw_config['output']):
+            cooked['output'] = os.path.join(raw_config['output'],
+                                            generate_new_filename())
+        else:
+            cooked['output'] = raw_config['output']
+    else:
+        cooked['output'] = generate_new_filename()
+    print cooked['output']
     for target in ('gray', 'black', 'deny'):
         if target in raw_config and os.path.exists(raw_config[target]):
             cooked[target] = retrieve_namelist_from(raw_config[target])
+        else:
+            cooked[target] = [] # default empty
     return cooked
 
 
@@ -226,8 +239,12 @@ if __name__ == '__main__':
         sys.exit(0)
     # business logic
     good = preprocess_config(raw_config)
-    candidate_list = lottery(good)
-    result = write_to_csv(candidate_list, good['output'])
+    if good:
+        candidate_list = lottery(good)
+        result = write_to_csv(candidate_list, good['output'])
+    else:
+        print_usage()
+        sys.exit(-1)
     # telling what's next
     for i in result:
         print i
