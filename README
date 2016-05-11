@@ -19,3 +19,6 @@ http://katazen.blogspot.tw/2014/10/012-python-cprofile-part-1.html
 
 python_twisted
 tool to test something like wget
+
+dns_server
+test server for DNS protocol/environment
