@@ -1,5 +1,25 @@
 ## Test Server for DNS Protocol/Environment ##
 -----
+
+### Man in the Middle DNS Server ###
+- **dns_mitm_server.py**
+
+#### dns_mitm_server.py -h ####
+- **Usage**
+ + Usage: -p <PORT>  -f IPv4:PORT  [--verbose]  [-h]
+ +  -p PORT      : i.e. 10053 (root is necessary if port < 1024)
+ +  -f IPv4:PORT : i.e. 8.8.8.8:53
+ +  -a FQDN:IPv4 : i.e. google.com.:127.0.0.1 (NXDOMAIN return without IPv4)
+ +  --aaaa FQDN:IPv6 : i.e. google.com.:::1 (NXDOMAIN return without IPv6)
+ +  -h           : show help
+ + Example:
+ +     -p 53 -f 8.8.8.8:53
+ +     -p 53 -f 8.8.8.8:53 -f 168.95.1.1:53
+ +     -p 53 -f 8.8.8.8:53 -f 168.95.1.1:53 -a google.com:127.0.0.1
+ +     -p 53 -f 8.8.8.8:53 -f 168.95.1.1:53 -a nxdomain.com.:
+ +     -p 53 -f 168.95.1.1:53 --aaaa google.com.:::1 --aaaa nxdomain.com.:
+
+
 ### Forward DNS Server ###
 - **dns_forward_server.py**
  + redirect dns request/response between client and backend servers
