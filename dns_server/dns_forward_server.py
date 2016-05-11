@@ -46,6 +46,7 @@ def whereami():
     funcname = inspect.stack()[1][3]
     return str("%s(%d)" % (funcname, icu.f_back.f_lineno))
 
+
 # VERIFIED_IPv4_Private, VERIFIED_IPv4_Global
 # VERIFIED_IPv6_Private, VERIFIED_IPv6_Global, VERIFIED_Not_IP
 def get_type_of_ip(str_uri):
@@ -68,6 +69,13 @@ def get_type_of_ip(str_uri):
 
 def is_valid_ipv4(str_ip):
     if get_type_of_ip(str_ip) in (VERIFIED_IPv4_Private, VERIFIED_IPv4_Global):
+        return True
+    else:
+        return False
+
+
+def is_valid_ipv6(str_ip):
+    if get_type_of_ip(str_ip) in (VERIFIED_IPv6_Private, VERIFIED_IPv6_Global):
         return True
     else:
         return False

@@ -18,19 +18,21 @@ def print_usage():
 Usage: -p <PORT>  -f IPv4:PORT  [--verbose]  [-h]
     -p PORT      : i.e. 10053 (root is necessary if port < 1024)
     -f IPv4:PORT : i.e. 8.8.8.8:53
-    -a FQDN:IPv4 : i.e. google.com:127.0.0.1 (NXDOMAIN return without IPv4)
+    -a FQDN:IPv4 : i.e. google.com.:127.0.0.1 (NXDOMAIN return without IPv4)
+    --aaaa FQDN:IPv6 : i.e. google.com.::::1 (NXDOMAIN return without IPv6)
     -h           : show help
 Example:
-    -p 10053 -f 8.8.8.8:53
-    -p 10053 -f 8.8.8.8:53 -f 168.95.1.1:53
-    -p 10053 -f 8.8.8.8:53 -f 168.95.1.1:53 -a google.com:127.0.0.1
-    -p 10053 -f 8.8.8.8:53 -f 168.95.1.1:53 -a unknown.com:
+    -p 53 -f 8.8.8.8:53
+    -p 53 -f 8.8.8.8:53 -f 168.95.1.1:53
+    -p 53 -f 8.8.8.8:53 -f 168.95.1.1:53 -a google.com:127.0.0.1
+    -p 53 -f 8.8.8.8:53 -f 168.95.1.1:53 -a nxdomain.com.:
+    -p 53 -f 168.95.1.1:53 --aaaa google.com.:::1 --aaaa nxdomain.com.:
     '''
 
 
 def parse_parameter(argv, log_cb=None):
     try:
-        opts, args = getopt.getopt(argv, 'hp:f:a:', ['verbose'])
+        opts, args = getopt.getopt(argv, 'hp:f:a:', ['verbose', 'aaaa='])
     except getopt.GetoptError as err:
         if log_cb:
             log_cb.error('Exception: GetoptError: '+str(err.args))
@@ -59,6 +61,22 @@ def parse_parameter(argv, log_cb=None):
                     profiles.append(ResourceRecord(fqdn=pairs[0],
                                                    answer=None,
                                                    type=4))
+        elif opt in ("--aaaa",): # --aaaa google.com.:::1
+            pairs = arg.split(':')
+            if len(pairs) > 3 and is_valid_domain_name(pairs[0]):
+                ipaddrv6 = ':'.join(pairs[1:])
+                if is_valid_ipv6(ipaddrv6):
+                    profiles.append(ResourceRecord(fqdn=pairs[0],
+                                                   answer=ipaddrv6,
+                                                   type=6))
+                else: # NXDOMAIN
+                    profiles.append(ResourceRecord(fqdn=pairs[0],
+                                                   answer=None,
+                                                   type=6))
+            elif len(pairs) == 2: # NXDOMAIN
+                    profiles.append(ResourceRecord(fqdn=pairs[0],
+                                                   answer=None,
+                                                   type=6))
         elif opt in ('-h', '--help'):
             print_usage()
             sys.exit(0)
@@ -90,7 +108,7 @@ class ResourceRecord:
 
     @property
     def response(self):
-        return self.answer
+        return self.type, self.answer
 
 
 class MyThreadedUDPRequestHandler(BaseRequestHandler):
@@ -107,25 +125,50 @@ class MyThreadedUDPRequestHandler(BaseRequestHandler):
             DEBUG.dpi('dns', query_payload)
         # if in current zone file
         reader = dnslib.DNSRecord.parse(query_payload)
-        if reader.q.qtype == 1: # A
+        if reader.q.qtype in (1, 28): # 1:'A'; 28:'AAAA'
             qname = str(reader.q.get_qname())
             sn_id = reader.header.id
+            if reader.q.qtype == 1:
+                q_type = 4
+            elif reader.q.qtype == 28:
+                q_type = 6 # 28 -> 6
+            else:
+                q_type = 0
             if qname in ZONE_FILE_DICT.keys():
-                qanswer = ZONE_FILE_DICT[qname]
-                if qanswer:
-                    mock = dnslib.DNSRecord(dnslib.DNSHeader(qr=1, aa=1, ra=1,
-                                                             id=sn_id),
-                                            q=dnslib.DNSQuestion(qname),
-                                            a=dnslib.RR(qname,
-                                                        rdata=dnslib.A(qanswer)))
-                else: # NXDOMAIN
-                    mock = dnslib.DNSRecord(dnslib.DNSHeader(qr=1, aa=0, ra=0,
-                                                             id=sn_id,
-                                                             rcode=getattr(dnslib.RCODE, 'NXDOMAIN')),
-                                            q=dnslib.DNSQuestion(qname))
-                socket_client.sendto(mock.pack(), self.client_address)
-                print mock
-                return
+                mock = None
+                for (ip_type, ip) in ZONE_FILE_DICT[qname]:
+                    if ip_type != q_type:
+                        continue
+                    if ip_type == 4:
+                        if ip:
+                            mock = dnslib.DNSRecord(
+                                dnslib.DNSHeader(qr=1, aa=1, ra=1, id=sn_id),
+                                q=dnslib.DNSQuestion(qname),
+                                a=dnslib.RR(qname, rdata=dnslib.A(ip)))
+                        else:# NXDOMAIN
+                            mock = dnslib.DNSRecord(
+                                dnslib.DNSHeader(qr=1, aa=0, ra=0, id=sn_id,
+                                                 rcode=getattr(dnslib.RCODE,
+                                                               'NXDOMAIN')),
+                                q=dnslib.DNSQuestion(qname))
+                    elif ip_type == 6:
+                        if ip:
+                            mock = dnslib.DNSRecord(
+                                dnslib.DNSHeader(qr=1, aa=1, ra=1, id=sn_id),
+                                q=dnslib.DNSQuestion(qname, qtype=28),
+                                a=dnslib.RR(qname,
+                                            dnslib.QTYPE.AAAA,
+                                            rdata=dnslib.AAAA(ip)))
+                        else:# NXDOMAIN
+                            mock = dnslib.DNSRecord(
+                                dnslib.DNSHeader(qr=1, aa=0, ra=0, id=sn_id,
+                                                 rcode=getattr(dnslib.RCODE,
+                                                               'NXDOMAIN')),
+                                q=dnslib.DNSQuestion(qname, qtype=28))
+                if mock:
+                    socket_client.sendto(mock.pack(), self.client_address)
+                    print mock
+                    return
         # if not in current zone file
         children = list()
         answers = Queue.Queue()
@@ -171,9 +214,12 @@ def invoke_dns_server(configs, log_cb=None):
                 continue
             if i.destination:
                 BACKEND_DNS_SERVERS.append(i.destination)
-        # pre-defined fqdn -> ip
+        # pre-defined fqdn -> (ipv4, ipv6)
         elif isinstance(i, ResourceRecord):
-            ZONE_FILE_DICT[i.query] = i.response
+            if i.query not in ZONE_FILE_DICT:
+                ZONE_FILE_DICT[i.query] = [i.response, ]
+            else:
+                ZONE_FILE_DICT[i.query].append(i.response)
     server = MyThreadedUDPServer(('', local_server_port),
                                  MyThreadedUDPRequestHandler)
     ip, port = server.server_address
